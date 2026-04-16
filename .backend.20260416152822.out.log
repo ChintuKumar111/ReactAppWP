@@ -1,0 +1,6 @@
+
+> hello_react_app@0.1.0 server
+> node src/backend/server.js
+
+Server running on port 5001
+MySQL Connected

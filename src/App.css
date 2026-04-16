@@ -1,5 +1,60 @@
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
 .App {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: #f0f0f0;
+  padding: 20px;
+}
+
+.login-container h1 {
+  margin-bottom: 20px;
+}
+
+.login-container form {
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+}
+
+.login-container div {
+  margin-bottom: 15px;
+}
+
+.login-container label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.login-container input {
+  width: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.login-container button {
+  padding: 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.login-container button:hover {
+  background-color: #0056b3;
 }
 
 .App-logo {
