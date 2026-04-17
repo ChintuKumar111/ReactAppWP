@@ -2,6 +2,61 @@ import { useEffect, useRef, useState } from "react";
 import "./homeDashboard.css";
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5001";
+const FREE_WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_POLL_INTERVAL_MS = 1000;
+const DASHBOARD_FETCH_TIMEOUT_MS = 5000;
+const SOCKET_IO_SCRIPT_ID = "dashboard-socket-io-client-script";
+
+function fetchWithTimeout(url, options = {}, timeoutMs = DASHBOARD_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(url, {
+    ...options,
+    signal: controller.signal,
+  }).finally(() => {
+    window.clearTimeout(timeoutId);
+  });
+}
+
+function ticketKey(value) {
+  return String(value ?? "");
+}
+
+function idsMatch(a, b) {
+  return ticketKey(a) === ticketKey(b);
+}
+
+function extractUserIdFromSocketPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  return payload.userId ?? payload.user_id ?? payload.id ?? null;
+}
+
+function resolveTicketId(user, index) {
+  const primaryId =
+    user?.id ??
+    user?.user_id ??
+    user?.userId ??
+    user?.wa_id ??
+    user?.whatsapp_id ??
+    user?.contact_id;
+
+  if (primaryId != null && String(primaryId).trim() !== "") {
+    return primaryId;
+  }
+
+  const phoneLike = user?.phone ?? user?.mobile ?? user?.phone_number ?? "";
+  if (String(phoneLike).trim() !== "") {
+    return String(phoneLike).trim();
+  }
+
+  const nameLike = String(user?.name ?? user?.fullname ?? user?.username ?? "").trim();
+  if (nameLike) {
+    return `name-${nameLike.toLowerCase()}`;
+  }
+
+  return `unknown-${index}`;
+}
 
 function formatMessageTime(value) {
   if (!value) return "Now";
@@ -45,6 +100,65 @@ function getChatDateLabel(value) {
     day: "2-digit",
     month: "short",
     year: "numeric",
+  });
+}
+
+function getFreeWindowState(lastCustomerMessageAt, nowMs = Date.now()) {
+  if (!lastCustomerMessageAt) {
+    return {
+      isOpen: false,
+      remainingMs: 0,
+      progress: 0,
+      lastCustomerMessageAt: null,
+    };
+  }
+
+  const start = new Date(lastCustomerMessageAt);
+  const startMs = start.getTime();
+
+  if (Number.isNaN(startMs)) {
+    return {
+      isOpen: false,
+      remainingMs: 0,
+      progress: 0,
+      lastCustomerMessageAt: null,
+    };
+  }
+
+  const expiryMs = startMs + FREE_WINDOW_DURATION_MS;
+  const remainingMs = Math.max(0, expiryMs - nowMs);
+
+  return {
+    isOpen: remainingMs > 0,
+    remainingMs,
+    progress: remainingMs / FREE_WINDOW_DURATION_MS,
+    lastCustomerMessageAt: start.toISOString(),
+  };
+}
+
+function getFreeWindowLabel(remainingMs) {
+  if (remainingMs <= 0) {
+    return { hours: 0, minutes: 0 };
+  }
+
+  const totalMinutes = Math.ceil(remainingMs / (60 * 1000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return {
+    hours: Math.min(24, Math.max(0, hours)),
+    minutes: Math.max(0, minutes),
+  };
+}
+
+function formatTicketTime(value) {
+  if (!value) return "Just now";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Just now";
+  return parsed.toLocaleString([], {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -272,6 +386,8 @@ function Sidebar() {
         <div className="sidebar-calls-select">
           <PhoneIcon />
           <span>Both</span>
+
+
           <ChevronDown />
         </div>
         <button className="sidebar-inbox-btn">
@@ -288,7 +404,39 @@ function Sidebar() {
   );
 }
 
-function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, tickets }) {
+function FreeWindowTimer({ lastCustomerMessageAt, nowMs }) {
+  const state = getFreeWindowState(lastCustomerMessageAt, nowMs);
+  const { hours, minutes } = getFreeWindowLabel(state.remainingMs);
+  const size = 72;
+  const center = size / 2;
+  const radius = 25;
+  const circumference = 2 * Math.PI * radius;
+  const strokeOffset = circumference * (1 - state.progress);
+
+  return (
+    <div className="free-window-timer" title="24-hour free chat window">
+      <svg className="free-window-ring" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle className="free-window-ring-track" cx={center} cy={center} r={radius} />
+        <circle
+          className={`free-window-ring-progress ${state.isOpen ? "open" : "closed"}`}
+          cx={center}
+          cy={center}
+          r={radius}
+          style={{
+            strokeDasharray: circumference,
+            strokeDashoffset: strokeOffset,
+          }}
+        />
+      </svg>
+      <div className="free-window-center">
+        <strong>{hours}h</strong>
+        <span>{minutes}m</span>
+      </div>
+    </div>
+  );
+}
+
+function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, tickets, totalUnread }) {
   const [search, setSearch] = useState("");
 
   const filtered = (tickets || []).filter(t =>
@@ -324,6 +472,7 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
           <div className="ticket-checkbox" />
         </label>
         <span className="ticket-count">{filtered.length} Tickets</span>
+        {totalUnread > 0 && <span className="ticket-new-counter">{totalUnread} New</span>}
         {/* <div style={{ display: "flex", gap: 6 }}>
           <button className="ticket-filter-btn"><FilterIcon /></button>
           <button className="ticket-filter-btn"><SortIcon /></button>
@@ -334,7 +483,7 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
         {filtered.map((ticket) => (
           <div
             key={ticket.id}
-            className={`ticket-item ${ticket.active || activeTicket === ticket.id ? "active" : ""} ${ticket.unread > 0 ? "unread" : ""}`}
+            className={`ticket-item ${ticket.active || idsMatch(activeTicket, ticket.id) ? "active" : ""} ${ticket.unread > 0 ? "unread" : ""}`}
             onClick={() => setActiveTicket(ticket.id)}
           >
             <div className="ticket-item-header">
@@ -343,13 +492,7 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
               <span className="ticket-channel">
                 <WhatsAppIcon />
               </span>
-             <span className="ticket-time">  
-              {new Date(ticket.time).toLocaleDateString("en-GB", {
-               day: "numeric",
-               month: "long",
-                year: "numeric",
-              })}
-</span>
+             <span className="ticket-time">{formatTicketTime(ticket.time)}</span>
             </div>
             <div className="ticket-preview">
               <div className="ticket-avatar">🤖</div>
@@ -373,9 +516,19 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
 
 function ChatPanel({ activeTicket, ticket, messages, onSendMessage }) {
   const [input, setInput] = useState("");
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState(
+    process.env.REACT_APP_WHATSAPP_TEMPLATE_NAME || "hello_world"
+  );
+  const [templateLanguage, setTemplateLanguage] = useState(
+    process.env.REACT_APP_WHATSAPP_TEMPLATE_LANGUAGE || "en_US"
+  );
   const messagesContainerRef = useRef(null);
   const ticketData = ticket || {};
   const ticketMessages = Array.isArray(messages) ? messages : [];
+  const freeWindowState = getFreeWindowState(ticketData.lastCustomerMessageAt, nowMs);
+  const isFreeWindowOpen = freeWindowState.isOpen;
   
 const handleInput = (e) => {
   const el = e.target;
@@ -384,13 +537,17 @@ const handleInput = (e) => {
 };
   const handleSend = () => {
     const trimmed = input.trim();
-    if (!trimmed || !activeTicket || typeof onSendMessage !== "function") return;
-    onSendMessage(trimmed);
+    if (!trimmed || activeTicket == null || typeof onSendMessage !== "function") return;
+    onSendMessage(trimmed, {
+      isTemplate: !isFreeWindowOpen,
+      templateName,
+      languageCode: templateLanguage,
+    });
     setInput("");
   };
 
   const handleInfoClick = () => {
-    window.alert(`Name: ${ticketData.name || "Unknown"}\nPhone: ${ticketData.phone || "N/A"}`);
+    setIsInfoDialogOpen(true);
   };
 
   useEffect(() => {
@@ -398,30 +555,39 @@ const handleInput = (e) => {
     messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
   }, [ticketData.id, ticketMessages.length]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   return (
     <div className="chat-panel">
       {/* Header */}
       <div className="chat-header">
         <div className="chat-header-avatar">
           {ticketData.name?.charAt(0) || "D"}
-          <span className="chat-header-avatar-badge">😊</span>
+        
         </div>
         <div className="chat-header-info">
           <div className="chat-header-name">{ticketData.name}</div>
           <div className="chat-header-id">{ticketData.id}</div>
-        </div>
-        <div className="chat-header-actions">
-          <button className="chat-header-btn green">
-            <PhoneIcon />
-          </button>
-          <div className="bot-badge">
-            <BotIcon />
-            Bot
+          <div className={`chat-window-status ${isFreeWindowOpen ? "open" : "closed"}`}>
+            {isFreeWindowOpen ? "Free chat window is open" : "Free chat window expired"}
           </div>
-          <button className="chat-header-btn"><TagIcon /></button>
-          <button className="chat-header-btn"><TimerIcon /></button>
-          <button className="chat-header-btn"><CheckIcon /></button>
-          <button className="chat-header-btn" onClick={handleInfoClick}><InfoCircle /></button>
+        </div>
+        <FreeWindowTimer lastCustomerMessageAt={ticketData.lastCustomerMessageAt} nowMs={nowMs} />
+        <div className="chat-header-actions">
+          <button
+            type="button"
+            className="chat-header-btn"
+            onClick={handleInfoClick}
+            aria-label="Open customer info"
+          >
+            <InfoCircle />
+          </button>
         </div>
       </div>
 
@@ -489,6 +655,7 @@ const handleInput = (e) => {
             className="chat-input-box"
            placeholder="Type Message Here..."
             value={input}
+            disabled={!isFreeWindowOpen}
             onInput={handleInput}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -505,10 +672,56 @@ const handleInput = (e) => {
             </svg>
           </button>
           <button className="chat-send-btn" onClick={handleSend} disabled={!input.trim()}>
-            Send <SendIcon />
+            {isFreeWindowOpen ? "Send" : "Send Template"} <SendIcon />
           </button>
         </div>
+        {!isFreeWindowOpen && (
+          <div className="chat-window-hint">
+            <div className="chat-window-hint-text">
+              24-hour window is closed. WhatsApp template is required.
+            </div>
+            <div className="chat-template-fields">
+              <input
+                className="chat-template-input"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Template name"
+              />
+              <input
+                className="chat-template-input"
+                value={templateLanguage}
+                onChange={(e) => setTemplateLanguage(e.target.value)}
+                placeholder="Language code (en_US)"
+              />
+            </div>
+          </div>
+        )}
       </div>
+
+      {isInfoDialogOpen && (
+        <div
+          className="chat-info-dialog-backdrop"
+          onClick={() => setIsInfoDialogOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="chat-info-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-info-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="chat-info-dialog-title">Customer Info</h3>
+            <p><strong>Name:</strong> {ticketData.name || "Unknown"}</p>
+            <p><strong>Phone:</strong> {ticketData.phone || "N/A"}</p>
+            <div className="chat-info-dialog-actions">
+              <button type="button" className="chat-send-btn" onClick={() => setIsInfoDialogOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -519,194 +732,382 @@ export default function HomeDashboard() {
   const [tickets, setTickets] = useState([]);
   const [activeTicket, setActiveTicket] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [, setUnreadByTicket] = useState({});
-  const lastTicketSnapshotRef = useRef({});
+
+  // ✅ FIXED: properly store unread state
+  const [unreadByTicket, setUnreadByTicket] = useState({});
+  const [pendingOutgoingByTicket, setPendingOutgoingByTicket] = useState({});
+
+  const lastCustomerSnapshotRef = useRef({});
+  const pendingOutgoingByTicketRef = useRef({});
+  const activeTicketRef = useRef(null);
+  activeTicketRef.current = activeTicket;
+  pendingOutgoingByTicketRef.current = pendingOutgoingByTicket;
+
+  // ================== LOAD USERS ==================
   const loadUsers = () => {
-    fetch(`${API_BASE_URL}/users`)
+    return fetchWithTimeout(`${API_BASE_URL}/users`)
       .then((res) => res.json())
       .then((data) => {
         const mapped = Array.isArray(data)
-          ? data.map((user) => ({
-              id: user.id ?? user.user_id ?? user.ID ?? 0,
-              name: user.name ?? user.fullname ?? user.username ?? "Unknown",
-              phone: user.phone ?? user.mobile ?? user.phone_number ?? "",
+          ? data.map((user, index) => ({
+              id: resolveTicketId(user, index),
+              name: user.name ?? "Unknown",
+              phone: user.phone ?? "",
               channel: "whatsapp",
-              time: user.last_seen ?? "just now",
+              time: user.last_seen ?? "",
               preview: user.last_message ?? "",
-              lastSender: user.last_sender ?? "",
+              lastCustomerMessageId: user.last_customer_message_id ?? null,
+              lastCustomerMessageAt: user.last_customer_message_at ?? "",
               badge: "Bot",
               unread: 0,
-              active: false,
             }))
           : [];
 
+        // ✅ UNREAD LOGIC
         setUnreadByTicket((prev) => {
-          const next = { ...prev };
-          const nextSnapshots = { ...lastTicketSnapshotRef.current };
-          const currentIds = new Set(mapped.map((ticket) => ticket.id));
+          const nextUnread = { ...(prev || {}) };
+          const nextSnapshots = { ...lastCustomerSnapshotRef.current };
 
           mapped.forEach((ticket) => {
-            const snapshot = `${ticket.time}|${ticket.preview}|${ticket.lastSender}`;
-            const previousSnapshot = lastTicketSnapshotRef.current[ticket.id];
+            const key = ticketKey(ticket.id);
 
-            if (
-              previousSnapshot &&
-              previousSnapshot !== snapshot &&
-              ticket.id !== activeTicket &&
-              ticket.lastSender === "customer"
-            ) {
-              next[ticket.id] = (next[ticket.id] || 0) + 1;
+            // 🔥 Strong snapshot
+            const snapshot =
+              ticket.lastCustomerMessageId != null
+                ? String(ticket.lastCustomerMessageId)
+                : ticket.lastCustomerMessageAt
+                ? String(ticket.lastCustomerMessageAt)
+                : "";
+
+            const previousSnapshot = lastCustomerSnapshotRef.current[key];
+            const isActive = idsMatch(ticket.id, activeTicketRef.current);
+
+            // First time
+            if (previousSnapshot === undefined) {
+              nextUnread[key] = nextUnread[key] || 0;
+            }
+            // New message
+            else if (snapshot && previousSnapshot !== snapshot && !isActive) {
+              nextUnread[key] = (nextUnread[key] || 0) + 1;
             }
 
-            if (next[ticket.id] == null) {
-              next[ticket.id] = 0;
-            }
-
-            nextSnapshots[ticket.id] = snapshot;
+            nextSnapshots[key] = snapshot;
           });
 
-          Object.keys(next).forEach((id) => {
-            if (!currentIds.has(Number(id))) {
-              delete next[id];
-            }
-          });
+          lastCustomerSnapshotRef.current = nextSnapshots;
 
-          Object.keys(nextSnapshots).forEach((id) => {
-            if (!currentIds.has(Number(id))) {
-              delete nextSnapshots[id];
-            }
-          });
-
-          lastTicketSnapshotRef.current = nextSnapshots;
-          const mappedWithUnread = mapped.map((ticket) => ({
-            ...ticket,
-            unread: next[ticket.id] ?? 0,
+          const mappedWithUnread = mapped.map((t) => ({
+            ...t,
+            unread: nextUnread[ticketKey(t.id)] || 0,
           }));
+
           setTickets(mappedWithUnread);
-          return next;
+
+          return nextUnread;
         });
 
-        setActiveTicket((currentActiveTicket) => {
-          if (currentActiveTicket && mapped.some((ticket) => ticket.id === currentActiveTicket)) {
-            return currentActiveTicket;
+        // Set active ticket
+        setActiveTicket((current) => {
+          if (current != null && mapped.some((t) => idsMatch(t.id, current))) {
+            return current;
           }
-
           return mapped.length > 0 ? mapped[0].id : null;
         });
       })
       .catch((err) => console.error("Fetch users failed:", err));
   };
 
+  // ================== RESET UNREAD ==================
   useEffect(() => {
-    if (!activeTicket) return;
-    setUnreadByTicket((prev) => ({ ...prev, [activeTicket]: 0 }));
+    if (activeTicket == null) return;
+
+    setUnreadByTicket((prev) => ({
+      ...prev,
+      [ticketKey(activeTicket)]: 0,
+    }));
+
     setTickets((prev) =>
-      prev.map((ticket) =>
-        ticket.id === activeTicket ? { ...ticket, unread: 0 } : ticket
+      prev.map((t) =>
+        idsMatch(t.id, activeTicket) ? { ...t, unread: 0 } : t
       )
     );
   }, [activeTicket]);
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
+  // ================== LOAD MESSAGES ==================
+  const loadMessages = (ticketId = activeTicketRef.current) => {
+    if (ticketId == null) return Promise.resolve();
 
-  const loadMessages = () => {
-    if (!activeTicket) return;
-
-    fetch(`${API_BASE_URL}/messages/${activeTicket}`)
+    return fetchWithTimeout(`${API_BASE_URL}/messages/${ticketId}`)
       .then((res) => res.json())
       .then((data) => {
         const mapped = Array.isArray(data)
           ? data.map((msg) => ({
               type: msg.sender === "admin" ? "outgoing" : "incoming",
-              text: msg.message ?? msg.text ?? "",
-              createdAt: msg.created_at ?? msg.createdAt ?? "",
+              text: msg.message ?? "",
+              createdAt: msg.created_at ?? "",
             }))
           : [];
-        setMessages(mapped);
+
+        if (!idsMatch(ticketId, activeTicketRef.current)) {
+          return;
+        }
+
+        const pendingOutgoing =
+          pendingOutgoingByTicketRef.current[ticketKey(ticketId)] || [];
+
+        const optimisticMessages = pendingOutgoing.map((pending) => ({
+          type: "outgoing",
+          text: pending.text,
+          createdAt: pending.createdAt,
+          pending: true,
+          clientId: pending.clientId,
+        }));
+
+        setMessages([...mapped, ...optimisticMessages]);
       })
       .catch((err) => console.error("Fetch messages failed:", err));
   };
+
+  // ================== EFFECTS ==================
+  useEffect(() => {
+    loadUsers();
+  }, []);
 
   useEffect(() => {
     loadMessages();
   }, [activeTicket]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
+    const interval = setInterval(() => {
       loadUsers();
+      if (activeTicket != null) loadMessages();
+    }, DASHBOARD_POLL_INTERVAL_MS);
 
-      if (activeTicket) {
-        loadMessages();
-      }
-    }, 3000);
-
-    return () => window.clearInterval(intervalId);
+    return () => clearInterval(interval);
   }, [activeTicket]);
 
-  const sendMessage = (messageText) => {
-    if (!activeTicket || !messageText) return;
-    const trimmedMessage = messageText.trim();
-    if (!trimmedMessage) return;
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return undefined;
+    }
 
-    const tempMessageId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const optimisticMessage = {
-      id: tempMessageId,
-      type: "outgoing",
-      text: trimmedMessage,
-      createdAt: new Date().toISOString(),
-      isPending: true,
+    let disposed = false;
+    let socket = null;
+    let scriptElement = null;
+
+    const handleIncomingSocketMessage = (payload) => {
+      const sender = payload?.sender;
+      const rawUserId = extractUserIdFromSocketPayload(payload);
+
+      if (sender !== "customer" || rawUserId == null) {
+        return;
+      }
+
+      const incomingTicketId = rawUserId;
+      const nowIso = new Date().toISOString();
+      const messageText = String(payload?.message ?? "").trim();
+      const createdAt = payload?.created_at || nowIso;
+      const snapshot =
+        payload?.id != null
+          ? String(payload.id)
+          : payload?.message_id != null
+          ? String(payload.message_id)
+          : String(createdAt);
+      const key = ticketKey(incomingTicketId);
+      const isActive = idsMatch(incomingTicketId, activeTicketRef.current);
+
+      lastCustomerSnapshotRef.current = {
+        ...lastCustomerSnapshotRef.current,
+        [key]: snapshot,
+      };
+
+      setUnreadByTicket((prev) => ({
+        ...prev,
+        [key]: isActive ? 0 : (prev[key] || 0) + 1,
+      }));
+
+      setTickets((prev) =>
+        prev.map((ticket) =>
+          idsMatch(ticket.id, incomingTicketId)
+            ? {
+                ...ticket,
+                preview: messageText || ticket.preview,
+                time: createdAt,
+                lastCustomerMessageAt: createdAt,
+                lastCustomerMessageId: payload?.id ?? payload?.message_id ?? ticket.lastCustomerMessageId,
+                unread: isActive ? 0 : (ticket.unread || 0) + 1,
+              }
+            : ticket
+        )
+      );
+
+      if (isActive) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "incoming",
+            text: messageText,
+            createdAt,
+          },
+        ]);
+      }
+
+      loadUsers();
+      if (isActive) {
+        loadMessages(incomingTicketId);
+      }
     };
 
-    // Render immediately so sending feels instant in the dashboard.
-    setMessages((prev) => [...prev, optimisticMessage]);
+    const connectSocket = () => {
+      if (disposed || typeof window.io !== "function") {
+        return;
+      }
 
-    fetch(`${API_BASE_URL}/send-message`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ userId: activeTicket, message: trimmedMessage }),
-    })
-      .then(async (res) => {
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Message send failed.");
-        }
-
-        return data;
-      })
-      .then((data) => {
-        if (data.success) {
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === tempMessageId ? { ...msg, isPending: false } : msg
-            )
-          );
-          loadUsers();
-        }
-      })
-      .catch((err) => {
-        setMessages((prev) => prev.filter((msg) => msg.id !== tempMessageId));
-        console.error("Send message failed:", err);
-        window.alert(err.message || "Message send failed.");
+      socket = window.io(API_BASE_URL, {
+        transports: ["websocket", "polling"],
       });
+      socket.on("newMessage", handleIncomingSocketMessage);
+    };
+
+    if (typeof window.io === "function") {
+      connectSocket();
+    } else {
+      const existingScript = document.getElementById(SOCKET_IO_SCRIPT_ID);
+
+      if (existingScript) {
+        scriptElement = existingScript;
+        scriptElement.addEventListener("load", connectSocket);
+      } else {
+        const script = document.createElement("script");
+        script.id = SOCKET_IO_SCRIPT_ID;
+        script.src = `${API_BASE_URL}/socket.io/socket.io.js`;
+        script.async = true;
+        script.addEventListener("load", connectSocket);
+        document.body.appendChild(script);
+        scriptElement = script;
+      }
+    }
+
+    return () => {
+      disposed = true;
+      if (scriptElement) {
+        scriptElement.removeEventListener("load", connectSocket);
+      }
+      if (socket) {
+        socket.off("newMessage", handleIncomingSocketMessage);
+        socket.disconnect();
+      }
+    };
+  }, []);
+
+  // ================== SEND MESSAGE ==================
+  const sendMessage = async (text) => {
+    if (activeTicket == null) return;
+
+    const trimmed = String(text || "").trim();
+    if (!trimmed) return;
+
+    const targetTicket = activeTicket;
+    const targetKey = ticketKey(targetTicket);
+    const clientId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const createdAt = new Date().toISOString();
+
+    setPendingOutgoingByTicket((prev) => ({
+      ...prev,
+      [targetKey]: [...(prev[targetKey] || []), { clientId, text: trimmed, createdAt }],
+    }));
+
+    if (idsMatch(targetTicket, activeTicketRef.current)) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "outgoing",
+          text: trimmed,
+          createdAt,
+          pending: true,
+          clientId,
+        },
+      ]);
+    }
+
+    setTickets((prev) =>
+      prev.map((ticket) =>
+        idsMatch(ticket.id, targetTicket)
+          ? {
+              ...ticket,
+              preview: trimmed,
+              time: createdAt,
+            }
+          : ticket
+      )
+    );
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/send-message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: targetTicket,
+          message: trimmed,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Send failed with status ${response.status}`);
+      }
+
+      setPendingOutgoingByTicket((prev) => {
+        const next = { ...prev };
+        next[targetKey] = (next[targetKey] || []).filter(
+          (item) => item.clientId !== clientId
+        );
+        return next;
+      });
+
+      await loadUsers();
+      if (idsMatch(targetTicket, activeTicketRef.current)) {
+        await loadMessages(targetTicket);
+      }
+    } catch (err) {
+      setPendingOutgoingByTicket((prev) => {
+        const next = { ...prev };
+        next[targetKey] = (next[targetKey] || []).filter(
+          (item) => item.clientId !== clientId
+        );
+        return next;
+      });
+
+      if (idsMatch(targetTicket, activeTicketRef.current)) {
+        await loadMessages(targetTicket);
+      }
+
+      console.error("Send message failed:", err);
+    }
   };
 
-  const activeTicketData = tickets.find((ticket) => ticket.id === activeTicket) || { id: activeTicket, name: "Unknown" };
+  const activeTicketData =
+    tickets.find((t) => idsMatch(t.id, activeTicket)) || {};
+
+  const totalUnread = tickets.reduce(
+    (sum, t) => sum + (t.unread || 0),
+    0
+  );
 
   return (
     <div className="dashboard">
       <Sidebar />
+
       <TicketPanel
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         activeTicket={activeTicket}
         setActiveTicket={setActiveTicket}
         tickets={tickets}
+        totalUnread={totalUnread}
       />
+
       <ChatPanel
         activeTicket={activeTicket}
         ticket={activeTicketData}

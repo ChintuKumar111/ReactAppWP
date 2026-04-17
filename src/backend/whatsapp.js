@@ -42,6 +42,66 @@ async function sendWhatsAppTextMessage(to, body) {
   return data;
 }
 
+async function sendWhatsAppTemplateMessage(to, templateName, languageCode, bodyParameters = []) {
+  if (!hasWhatsAppConfig()) {
+    throw new Error("Missing WhatsApp Cloud API configuration.");
+  }
+
+  const endpoint = `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${config.whatsapp.phoneNumberId}/messages`;
+  const normalizedTemplateName = String(templateName || "").trim();
+  const normalizedLanguageCode = String(languageCode || "").trim() || "en_US";
+
+  if (!normalizedTemplateName) {
+    throw new Error("Template name is required.");
+  }
+
+  const cleanedParameters = Array.isArray(bodyParameters)
+    ? bodyParameters
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .map((text) => ({ type: "text", text }))
+    : [];
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: normalizePhoneNumber(to),
+    type: "template",
+    template: {
+      name: normalizedTemplateName,
+      language: {
+        code: normalizedLanguageCode,
+      },
+    },
+  };
+
+  if (cleanedParameters.length > 0) {
+    payload.template.components = [
+      {
+        type: "body",
+        parameters: cleanedParameters,
+      },
+    ];
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.whatsapp.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || "WhatsApp template message send failed.");
+  }
+
+  return data;
+}
+
 function extractInboundMessages(payload) {
   const inbound = [];
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
@@ -81,5 +141,6 @@ module.exports = {
   extractInboundMessages,
   hasWhatsAppConfig,
   normalizePhoneNumber,
+  sendWhatsAppTemplateMessage,
   sendWhatsAppTextMessage,
 };

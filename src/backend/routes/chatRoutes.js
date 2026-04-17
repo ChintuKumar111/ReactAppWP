@@ -5,6 +5,7 @@ const config = require("../config");
 const {
   extractInboundMessages,
   hasWhatsAppConfig,
+  sendWhatsAppTemplateMessage,
   sendWhatsAppTextMessage,
 } = require("../whatsapp");
 
@@ -86,7 +87,9 @@ router.get("/users", (req, res) => {
         u.phone,
         latest.message AS last_message,
         latest.created_at AS last_seen,
-        latest.sender AS last_sender
+        latest.sender AS last_sender,
+        customer_latest.last_customer_message_id,
+        customer_latest.last_customer_message_at
       FROM users u
       LEFT JOIN (
         SELECT m1.user_id, m1.message, m1.created_at, m1.sender
@@ -100,6 +103,22 @@ router.get("/users", (req, res) => {
          AND recent.max_created_at = m1.created_at
       ) latest
         ON latest.user_id = u.id
+      LEFT JOIN (
+        SELECT
+          m.user_id,
+          m.id AS last_customer_message_id,
+          m.created_at AS last_customer_message_at
+        FROM messages m
+        INNER JOIN (
+          SELECT user_id, MAX(id) AS last_customer_message_id
+          FROM messages
+          WHERE sender = 'customer'
+          GROUP BY user_id
+        ) customer_max
+          ON customer_max.user_id = m.user_id
+         AND customer_max.last_customer_message_id = m.id
+      ) customer_latest
+        ON customer_latest.user_id = u.id
       ORDER BY latest.created_at DESC, u.id DESC
     `,
     (err, result) => {
@@ -170,6 +189,76 @@ router.post("/send-message", async (req, res) => {
     return res.json({ success: true, whatsapp: whatsappResponse });
   } catch (error) {
     console.error("Send message failed:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+router.post("/send-template-message", async (req, res) => {
+  const { userId, templateName, languageCode, bodyParameters } = req.body;
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required." });
+    }
+
+    if (!hasWhatsAppConfig()) {
+      return res.status(500).json({
+        error: "WhatsApp Cloud API is not configured on the server.",
+      });
+    }
+
+    const users = await runQuery("SELECT * FROM users WHERE id = ? LIMIT 1", [userId]);
+    const user = users[0];
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    if (!user.phone) {
+      return res.status(400).json({ error: "Selected user does not have a phone number." });
+    }
+
+    const chosenTemplateName = String(templateName || config.whatsapp.defaultTemplateName || "").trim();
+    const chosenLanguageCode = String(languageCode || config.whatsapp.defaultTemplateLanguage || "en_US").trim();
+
+    if (!chosenTemplateName) {
+      return res.status(400).json({
+        error: "Template name is required. Set WHATSAPP_DEFAULT_TEMPLATE_NAME or pass templateName.",
+      });
+    }
+
+    const normalizedParams = Array.isArray(bodyParameters)
+      ? bodyParameters.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+
+    const whatsappResponse = await sendWhatsAppTemplateMessage(
+      user.phone,
+      chosenTemplateName,
+      chosenLanguageCode,
+      normalizedParams
+    );
+
+    const readableText =
+      normalizedParams.length > 0
+        ? `Template: ${chosenTemplateName} (${normalizedParams.join(" | ")})`
+        : `Template: ${chosenTemplateName}`;
+
+    await runQuery(
+      "INSERT INTO messages (user_id, message, sender) VALUES (?, ?, 'admin')",
+      [userId, readableText]
+    );
+
+    if (req.io) {
+      req.io.emit("newMessage", {
+        user_id: userId,
+        message: readableText,
+        sender: "admin",
+      });
+    }
+
+    return res.json({ success: true, whatsapp: whatsappResponse });
+  } catch (error) {
+    console.error("Send template message failed:", error.message);
     return res.status(500).json({ error: error.message });
   }
 });

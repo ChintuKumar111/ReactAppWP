@@ -48,5 +48,7 @@ module.exports = {
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "",
     graphApiVersion: process.env.WHATSAPP_GRAPH_API_VERSION || "v23.0",
+    defaultTemplateName: process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || "hello_world",
+    defaultTemplateLanguage: process.env.WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE || "en_US",
   },
 };
