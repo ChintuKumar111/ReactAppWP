@@ -33,6 +33,15 @@ function loadEnvFile() {
 
 loadEnvFile();
 
+function sanitizeGraphApiVersion(value) {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+
+  return cleaned || "v23.0";
+}
+
 module.exports = {
   apiBaseUrl: process.env.API_BASE_URL || "http://localhost:5001",
   port: Number(process.env.PORT || 5001),
@@ -47,7 +56,7 @@ module.exports = {
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN || "",
-    graphApiVersion: process.env.WHATSAPP_GRAPH_API_VERSION || "v23.0",
+    graphApiVersion: sanitizeGraphApiVersion(process.env.WHATSAPP_GRAPH_API_VERSION),
     defaultTemplateName: process.env.WHATSAPP_DEFAULT_TEMPLATE_NAME || "hello_world",
     defaultTemplateLanguage: process.env.WHATSAPP_DEFAULT_TEMPLATE_LANGUAGE || "en_US",
   },

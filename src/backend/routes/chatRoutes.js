@@ -148,6 +148,33 @@ router.get("/messages/:userId", (req, res) => {
   );
 });
 
+router.delete("/chats/:userId", async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required." });
+    }
+
+    const users = await runQuery("SELECT id FROM users WHERE id = ? LIMIT 1", [userId]);
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    const deletedMessages = await runQuery("DELETE FROM messages WHERE user_id = ?", [userId]);
+    await runQuery("DELETE FROM users WHERE id = ?", [userId]);
+
+    return res.json({
+      success: true,
+      deletedUserId: userId,
+      deletedMessages: deletedMessages?.affectedRows || 0,
+    });
+  } catch (error) {
+    console.error("Delete chat failed:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/send-message", async (req, res) => {
   const { userId, message } = req.body;
 

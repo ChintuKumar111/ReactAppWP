@@ -591,6 +591,21 @@
   color: #255b39;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
+
+.chat-header-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.chat-header-btn.danger {
+  background: rgba(255, 235, 238, 0.95);
+  color: #b91c1c;
+}
+
+.chat-header-btn.danger:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
 .chat-bubble:hover {
   transform: scale(1.01);
 }

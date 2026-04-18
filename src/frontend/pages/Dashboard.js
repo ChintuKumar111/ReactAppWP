@@ -269,94 +269,9 @@ const SupportIcon = () => <Icon d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 
 
 const TimerIcon = () => <Icon d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2" />;
 const InfoCircle = () => <Icon d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 16v-4M12 8h.01" />;
+const TrashIcon = () => <Icon d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m-9 0l1 14a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9L17 6" />;
 
-
-// ─── Data ────────────────────────────────────────────────────────────
-// // const TICKETS = [
-// //   {
-// //     id: 57, name: "Sachin Baghel", channel: "whatsapp", time: "7 min ago",
-// //     preview: "oihp;inp;", badge: "CD", unread: 0, active: false
-// //   },
-// //   {
-// //     id: 10798, name: "Arun", channel: "whatsapp", time: "8 min ago",
-// //     preview: "Namaste 👋 FreshyZo mein aapka swagat hai! 🥛 Hum laa rahe hain far…",
-// //     badge: "Bot", unread: 0, active: true
-// //   },
-// //   {
-// //     id: 10797, name: "Smita Jain", channel: "whatsapp", time: "27 min ago",
-// //     preview: "Aap FreshyZo app yahan se download kar sakte hain: 👉 https://m.9m.i…",
-// //     badge: "Bot", unread: 7, active: false
-// //   },
-// //   {
-// //     id: 3872, name: "Arun Kumar Bhatt...", channel: "whatsapp", time: "an hour ago",
-// //     preview: "ok", badge: "PN", unread: 0, active: false
-// //   },
-// //   {
-// //     id: 10669, name: "Ekta", channel: "whatsapp", time: "an hour ago",
-// //     preview: "Aap FreshyZo app yahan se download kar sakte hain: https://m.9m.io/k…",
-// //     badge: "Bot", unread: 9, active: false
-// //   },
-// //   {
-// //     id: 10581, name: "Rahul Sharma", channel: "whatsapp", time: "2 hours ago",
-// //     preview: "Mujhe doodh ki subscription chahiye", badge: "Bot", unread: 0, active: false
-// //   },
-// // ];
-
-// const TICKET_MESSAGES = {
-//   57: {
-//     name: "Sachin Baghel",
-//     id: 57,
-//     messages: [
-//       { type: "incoming", text: "Hello, I need help with my order" },
-//       { type: "outgoing", text: "Sure! What's the issue?" },
-//       { type: "incoming", text: "I haven't received my delivery yet" },
-//       { type: "outgoing", text: "I apologize for the inconvenience. Let me check your order status." },
-//     ]
-//   },
-//   10798: {
-//     name: "Arun",
-//     id: 10798,
-//     messages: [
-//       { type: "incoming", text: "Hello, we bring fresh milk directly from farmers to your home" },
-//       { type: "outgoing", text: "Special Trial Offer: Pay for 3 days milk and get 3 days FREE extra!" },
-//       { type: "incoming", text: "This sounds great! How do I subscribe?" },
-//     ]
-//   },
-//   10797: {
-//     name: "Smita Jain",
-//     id: 10797,
-//     messages: [
-//       { type: "incoming", text: "You can download the FreshyZo app from the link: https://m.9m.io/app" },
-//       { type: "outgoing", text: "Thank you for downloading! Enjoy the offer." },
-//     ]
-//   },
-//   3872: {
-//     name: "Arun Kumar Bhatt",
-//     id: 3872,
-//     messages: [
-//       { type: "incoming", text: "ok" },
-//       { type: "outgoing", text: "Thanks for confirming!" },
-//     ]
-//   },
-//   10669: {
-//     name: "Ekta",
-//     id: 10669,
-//     messages: [
-//       { type: "incoming", text: "Can I get more details about the subscription?" },
-//       { type: "outgoing", text: "Of course! Let me share the details with you." },
-//     ]
-//   },
-//   10581: {
-//     name: "Rahul Sharma",
-//     id: 10581,
-//     messages: [
-//       { type: "incoming", text: "I want to subscribe for milk" },
-//       { type: "outgoing", text: "Sure! Which plan would you like?" },
-//     ]
-//   },
-// };
-
-const TABS = ["Open", "Snooze", "Close", "Spam"];
+const TABS = ["Open", "Snooze","Close", "Spam"];
 
 const NAV_ITEMS = [
   { icon: <InboxIcon />, label: "All Inboxes", active: false },
@@ -389,7 +304,7 @@ function Sidebar() {
           <span className="sidebar-brand-name">FreshyZo</span>
          
         </div>
-        <ChevronDown />
+        {/* <ChevronDown /> */}
       </div>
 
       <button className="sidebar-compose">
@@ -535,7 +450,7 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
              <span className="ticket-time">{formatTicketTime(ticket.time)}</span>
             </div>
             <div className="ticket-preview">
-              <div className="ticket-avatar">🤖</div>
+              <div className="ticket-avatar">💬</div>
               <span className="ticket-preview-text">{ticket.preview}</span>
             </div>
             <div className="ticket-footer">
@@ -554,7 +469,7 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
   );
 }
 
-function ChatPanel({ activeTicket, ticket, messages, onSendMessage }) {
+function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat, isDeletingChat }) {
   const [input, setInput] = useState("");
   const [nowMs, setNowMs] = useState(Date.now());
   const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
@@ -590,6 +505,11 @@ const handleInput = (e) => {
     setIsInfoDialogOpen(true);
   };
 
+  const handleDeleteClick = () => {
+    if (activeTicket == null || typeof onDeleteChat !== "function" || isDeletingChat) return;
+    onDeleteChat();
+  };
+
   useEffect(() => {
     if (!messagesContainerRef.current) return;
     messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
@@ -620,6 +540,16 @@ const handleInput = (e) => {
         </div>
         
         <div className="chat-header-actions">
+          <button
+            type="button"
+            className="chat-header-btn danger"
+            onClick={handleDeleteClick}
+            aria-label="Delete chat"
+            title="Delete this chat"
+            disabled={activeTicket == null || isDeletingChat}
+          >
+            <TrashIcon />
+          </button>
           <button
             type="button"
             className="chat-header-btn"
@@ -780,6 +710,7 @@ export default function HomeDashboard() {
   const [readCustomerCountByTicket, setReadCustomerCountByTicket] = useState(() =>
     loadReadCountMap()
   );
+  const [isDeletingChat, setIsDeletingChat] = useState(false);
 
   const lastCustomerSnapshotRef = useRef({});
   const pendingOutgoingByTicketRef = useRef({});
@@ -1158,6 +1089,82 @@ export default function HomeDashboard() {
     }
   };
 
+  const deleteActiveChat = async () => {
+    if (activeTicket == null || isDeletingChat) return;
+
+    const targetTicket = activeTicket;
+    const targetKey = ticketKey(targetTicket);
+    const selectedTicket = ticketsRef.current.find((ticket) => idsMatch(ticket.id, targetTicket));
+    const selectedName = selectedTicket?.name || "this user";
+    const confirmed = window.confirm(
+      `Delete chat with ${selectedName}? This will remove all messages for this user.`
+    );
+
+    if (!confirmed) return;
+
+    setIsDeletingChat(true);
+
+    try {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/chats/${encodeURIComponent(targetTicket)}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        let errorMessage = `Delete failed with status ${response.status}`;
+        try {
+          const errorData = await response.json();
+          if (errorData?.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (_error) {
+          // Ignore JSON parse failures and keep fallback error message.
+        }
+        throw new Error(errorMessage);
+      }
+
+      const remainingTickets = ticketsRef.current.filter(
+        (ticket) => !idsMatch(ticket.id, targetTicket)
+      );
+      const nextActiveTicket = remainingTickets.length > 0 ? remainingTickets[0].id : null;
+
+      setTickets(remainingTickets);
+      setActiveTicket(nextActiveTicket);
+      setMessages([]);
+
+      setUnreadByTicket((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[targetKey];
+        return next;
+      });
+
+      setPendingOutgoingByTicket((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[targetKey];
+        return next;
+      });
+
+      setReadCustomerCountByTicket((prev) => {
+        const next = { ...(prev || {}) };
+        delete next[targetKey];
+        saveReadCountMap(next);
+        return next;
+      });
+
+      lastCustomerSnapshotRef.current = {
+        ...(lastCustomerSnapshotRef.current || {}),
+      };
+      delete lastCustomerSnapshotRef.current[targetKey];
+
+      await loadUsers();
+    } catch (err) {
+      console.error("Delete chat failed:", err);
+      window.alert(`Unable to delete chat. ${err?.message || ""}`.trim());
+    } finally {
+      setIsDeletingChat(false);
+    }
+  };
+
   const activeTicketData =
     tickets.find((t) => idsMatch(t.id, activeTicket)) || {};
 
@@ -1184,6 +1191,8 @@ export default function HomeDashboard() {
         ticket={activeTicketData}
         messages={messages}
         onSendMessage={sendMessage}
+        onDeleteChat={deleteActiveChat}
+        isDeletingChat={isDeletingChat}
       />
     </div>
   );
