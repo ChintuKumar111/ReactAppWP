@@ -16,7 +16,6 @@ function runQuery(sql, params = []) {
         reject(err);
         return;
       }
-
       resolve(result);
     });
   });
@@ -88,6 +87,7 @@ router.get("/users", (req, res) => {
         latest.message AS last_message,
         latest.created_at AS last_seen,
         latest.sender AS last_sender,
+        COALESCE(customer_counts.customer_message_count, 0) AS customer_message_count,
         customer_latest.last_customer_message_id,
         customer_latest.last_customer_message_at
       FROM users u
@@ -103,6 +103,13 @@ router.get("/users", (req, res) => {
          AND recent.max_created_at = m1.created_at
       ) latest
         ON latest.user_id = u.id
+      LEFT JOIN (
+        SELECT user_id, COUNT(*) AS customer_message_count
+        FROM messages
+        WHERE sender = 'customer'
+        GROUP BY user_id
+      ) customer_counts
+        ON customer_counts.user_id = u.id
       LEFT JOIN (
         SELECT
           m.user_id,

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import "./homeDashboard.css";
+import logo from "../../asset/logo.jpeg";
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5001";
 const FREE_WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
 const DASHBOARD_POLL_INTERVAL_MS = 1000;
 const DASHBOARD_FETCH_TIMEOUT_MS = 5000;
 const SOCKET_IO_SCRIPT_ID = "dashboard-socket-io-client-script";
+const READ_COUNT_STORAGE_KEY = "dashboard-read-customer-count-v1";
 
 function fetchWithTimeout(url, options = {}, timeoutMs = DASHBOARD_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -30,6 +32,43 @@ function idsMatch(a, b) {
 function extractUserIdFromSocketPayload(payload) {
   if (!payload || typeof payload !== "object") return null;
   return payload.userId ?? payload.user_id ?? payload.id ?? null;
+}
+
+function parseCount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.floor(parsed);
+}
+
+function loadReadCountMap() {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(READ_COUNT_STORAGE_KEY);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+
+    const cleaned = {};
+    Object.entries(parsed).forEach(([key, value]) => {
+      cleaned[key] = parseCount(value);
+    });
+    return cleaned;
+  } catch (err) {
+    console.error("Failed to read unread persistence:", err);
+    return {};
+  }
+}
+
+function saveReadCountMap(nextMap) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(READ_COUNT_STORAGE_KEY, JSON.stringify(nextMap || {}));
+  } catch (err) {
+    console.error("Failed to persist unread state:", err);
+  }
 }
 
 function resolveTicketId(user, index) {
@@ -233,89 +272,89 @@ const InfoCircle = () => <Icon d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 1
 
 
 // ─── Data ────────────────────────────────────────────────────────────
-const TICKETS = [
-  {
-    id: 57, name: "Sachin Baghel", channel: "whatsapp", time: "7 min ago",
-    preview: "oihp;inp;", badge: "CD", unread: 0, active: false
-  },
-  {
-    id: 10798, name: "Arun", channel: "whatsapp", time: "8 min ago",
-    preview: "Namaste 👋 FreshyZo mein aapka swagat hai! 🥛 Hum laa rahe hain far…",
-    badge: "Bot", unread: 0, active: true
-  },
-  {
-    id: 10797, name: "Smita Jain", channel: "whatsapp", time: "27 min ago",
-    preview: "Aap FreshyZo app yahan se download kar sakte hain: 👉 https://m.9m.i…",
-    badge: "Bot", unread: 7, active: false
-  },
-  {
-    id: 3872, name: "Arun Kumar Bhatt...", channel: "whatsapp", time: "an hour ago",
-    preview: "ok", badge: "PN", unread: 0, active: false
-  },
-  {
-    id: 10669, name: "Ekta", channel: "whatsapp", time: "an hour ago",
-    preview: "Aap FreshyZo app yahan se download kar sakte hain: https://m.9m.io/k…",
-    badge: "Bot", unread: 9, active: false
-  },
-  {
-    id: 10581, name: "Rahul Sharma", channel: "whatsapp", time: "2 hours ago",
-    preview: "Mujhe doodh ki subscription chahiye", badge: "Bot", unread: 0, active: false
-  },
-];
+// // const TICKETS = [
+// //   {
+// //     id: 57, name: "Sachin Baghel", channel: "whatsapp", time: "7 min ago",
+// //     preview: "oihp;inp;", badge: "CD", unread: 0, active: false
+// //   },
+// //   {
+// //     id: 10798, name: "Arun", channel: "whatsapp", time: "8 min ago",
+// //     preview: "Namaste 👋 FreshyZo mein aapka swagat hai! 🥛 Hum laa rahe hain far…",
+// //     badge: "Bot", unread: 0, active: true
+// //   },
+// //   {
+// //     id: 10797, name: "Smita Jain", channel: "whatsapp", time: "27 min ago",
+// //     preview: "Aap FreshyZo app yahan se download kar sakte hain: 👉 https://m.9m.i…",
+// //     badge: "Bot", unread: 7, active: false
+// //   },
+// //   {
+// //     id: 3872, name: "Arun Kumar Bhatt...", channel: "whatsapp", time: "an hour ago",
+// //     preview: "ok", badge: "PN", unread: 0, active: false
+// //   },
+// //   {
+// //     id: 10669, name: "Ekta", channel: "whatsapp", time: "an hour ago",
+// //     preview: "Aap FreshyZo app yahan se download kar sakte hain: https://m.9m.io/k…",
+// //     badge: "Bot", unread: 9, active: false
+// //   },
+// //   {
+// //     id: 10581, name: "Rahul Sharma", channel: "whatsapp", time: "2 hours ago",
+// //     preview: "Mujhe doodh ki subscription chahiye", badge: "Bot", unread: 0, active: false
+// //   },
+// // ];
 
-const TICKET_MESSAGES = {
-  57: {
-    name: "Sachin Baghel",
-    id: 57,
-    messages: [
-      { type: "incoming", text: "Hello, I need help with my order" },
-      { type: "outgoing", text: "Sure! What's the issue?" },
-      { type: "incoming", text: "I haven't received my delivery yet" },
-      { type: "outgoing", text: "I apologize for the inconvenience. Let me check your order status." },
-    ]
-  },
-  10798: {
-    name: "Arun",
-    id: 10798,
-    messages: [
-      { type: "incoming", text: "Hello, we bring fresh milk directly from farmers to your home" },
-      { type: "outgoing", text: "Special Trial Offer: Pay for 3 days milk and get 3 days FREE extra!" },
-      { type: "incoming", text: "This sounds great! How do I subscribe?" },
-    ]
-  },
-  10797: {
-    name: "Smita Jain",
-    id: 10797,
-    messages: [
-      { type: "incoming", text: "You can download the FreshyZo app from the link: https://m.9m.io/app" },
-      { type: "outgoing", text: "Thank you for downloading! Enjoy the offer." },
-    ]
-  },
-  3872: {
-    name: "Arun Kumar Bhatt",
-    id: 3872,
-    messages: [
-      { type: "incoming", text: "ok" },
-      { type: "outgoing", text: "Thanks for confirming!" },
-    ]
-  },
-  10669: {
-    name: "Ekta",
-    id: 10669,
-    messages: [
-      { type: "incoming", text: "Can I get more details about the subscription?" },
-      { type: "outgoing", text: "Of course! Let me share the details with you." },
-    ]
-  },
-  10581: {
-    name: "Rahul Sharma",
-    id: 10581,
-    messages: [
-      { type: "incoming", text: "I want to subscribe for milk" },
-      { type: "outgoing", text: "Sure! Which plan would you like?" },
-    ]
-  },
-};
+// const TICKET_MESSAGES = {
+//   57: {
+//     name: "Sachin Baghel",
+//     id: 57,
+//     messages: [
+//       { type: "incoming", text: "Hello, I need help with my order" },
+//       { type: "outgoing", text: "Sure! What's the issue?" },
+//       { type: "incoming", text: "I haven't received my delivery yet" },
+//       { type: "outgoing", text: "I apologize for the inconvenience. Let me check your order status." },
+//     ]
+//   },
+//   10798: {
+//     name: "Arun",
+//     id: 10798,
+//     messages: [
+//       { type: "incoming", text: "Hello, we bring fresh milk directly from farmers to your home" },
+//       { type: "outgoing", text: "Special Trial Offer: Pay for 3 days milk and get 3 days FREE extra!" },
+//       { type: "incoming", text: "This sounds great! How do I subscribe?" },
+//     ]
+//   },
+//   10797: {
+//     name: "Smita Jain",
+//     id: 10797,
+//     messages: [
+//       { type: "incoming", text: "You can download the FreshyZo app from the link: https://m.9m.io/app" },
+//       { type: "outgoing", text: "Thank you for downloading! Enjoy the offer." },
+//     ]
+//   },
+//   3872: {
+//     name: "Arun Kumar Bhatt",
+//     id: 3872,
+//     messages: [
+//       { type: "incoming", text: "ok" },
+//       { type: "outgoing", text: "Thanks for confirming!" },
+//     ]
+//   },
+//   10669: {
+//     name: "Ekta",
+//     id: 10669,
+//     messages: [
+//       { type: "incoming", text: "Can I get more details about the subscription?" },
+//       { type: "outgoing", text: "Of course! Let me share the details with you." },
+//     ]
+//   },
+//   10581: {
+//     name: "Rahul Sharma",
+//     id: 10581,
+//     messages: [
+//       { type: "incoming", text: "I want to subscribe for milk" },
+//       { type: "outgoing", text: "Sure! Which plan would you like?" },
+//     ]
+//   },
+// };
 
 const TABS = ["Open", "Snooze", "Close", "Spam"];
 
@@ -344,10 +383,11 @@ function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="sidebar-brand-icon">H</div>
+        <div className="sidebar-brand-icon"><img src={logo} alt="logo" /> </div>
+
         <div className="sidebar-brand-text">
-          <span className="sidebar-brand-name">Hello</span>
-          <span className="sidebar-brand-sub">shyam3</span>
+          <span className="sidebar-brand-name">FreshyZo</span>
+         
         </div>
         <ChevronDown />
       </div>
@@ -381,7 +421,7 @@ function Sidebar() {
         ))}
       </ul>
 
-      <div className="sidebar-bottom">
+      {/* <div className="sidebar-bottom">
         <p className="sidebar-calls-label">Incoming Calls</p>
         <div className="sidebar-calls-select">
           <PhoneIcon />
@@ -399,7 +439,7 @@ function Sidebar() {
           <StarIcon />
           Upgrade
         </button>
-      </div>
+      </div> */}
     </aside>
   );
 }
@@ -449,7 +489,7 @@ function TicketPanel({ activeTab, setActiveTab, activeTicket, setActiveTicket, t
         <div className="ticket-search">
           <SearchIcon />
           <input
-            placeholder="Search Ticket"
+            placeholder="search tickets.."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -578,7 +618,7 @@ const handleInput = (e) => {
             {isFreeWindowOpen ? "Free chat window is open" : "Free chat window expired"}
           </div>
         </div>
-        <FreeWindowTimer lastCustomerMessageAt={ticketData.lastCustomerMessageAt} nowMs={nowMs} />
+        
         <div className="chat-header-actions">
           <button
             type="button"
@@ -589,6 +629,7 @@ const handleInput = (e) => {
             <InfoCircle />
           </button>
         </div>
+        <FreeWindowTimer lastCustomerMessageAt={ticketData.lastCustomerMessageAt} nowMs={nowMs} />
       </div>
 
       {/* Summarize */}
@@ -736,12 +777,19 @@ export default function HomeDashboard() {
   // ✅ FIXED: properly store unread state
   const [unreadByTicket, setUnreadByTicket] = useState({});
   const [pendingOutgoingByTicket, setPendingOutgoingByTicket] = useState({});
+  const [readCustomerCountByTicket, setReadCustomerCountByTicket] = useState(() =>
+    loadReadCountMap()
+  );
 
   const lastCustomerSnapshotRef = useRef({});
   const pendingOutgoingByTicketRef = useRef({});
+  const readCustomerCountByTicketRef = useRef(readCustomerCountByTicket);
+  const ticketsRef = useRef(tickets);
   const activeTicketRef = useRef(null);
   activeTicketRef.current = activeTicket;
   pendingOutgoingByTicketRef.current = pendingOutgoingByTicket;
+  readCustomerCountByTicketRef.current = readCustomerCountByTicket;
+  ticketsRef.current = tickets;
 
   // ================== LOAD USERS ==================
   const loadUsers = () => {
@@ -756,6 +804,7 @@ export default function HomeDashboard() {
               channel: "whatsapp",
               time: user.last_seen ?? "",
               preview: user.last_message ?? "",
+              customerMessageCount: parseCount(user.customer_message_count),
               lastCustomerMessageId: user.last_customer_message_id ?? null,
               lastCustomerMessageAt: user.last_customer_message_at ?? "",
               badge: "Bot",
@@ -764,54 +813,52 @@ export default function HomeDashboard() {
           : [];
 
         // ✅ UNREAD LOGIC
-        setUnreadByTicket((prev) => {
-          const nextUnread = { ...(prev || {}) };
-          const nextSnapshots = { ...lastCustomerSnapshotRef.current };
+        const nextReadMap = { ...(readCustomerCountByTicketRef.current || {}) };
+        const nextUnread = {};
+        const nextSnapshots = {};
+        const activeTicketKey = ticketKey(activeTicketRef.current);
+        const validKeys = new Set(mapped.map((ticket) => ticketKey(ticket.id)));
 
-          mapped.forEach((ticket) => {
-            const key = ticketKey(ticket.id);
+        mapped.forEach((ticket) => {
+          const key = ticketKey(ticket.id);
+          const currentCount = parseCount(ticket.customerMessageCount);
+          const readCount = Math.min(parseCount(nextReadMap[key] || 0), currentCount);
+          const isActive = key === activeTicketKey;
 
-            // 🔥 Strong snapshot
-            const snapshot =
-              ticket.lastCustomerMessageId != null
-                ? String(ticket.lastCustomerMessageId)
-                : ticket.lastCustomerMessageAt
-                ? String(ticket.lastCustomerMessageAt)
-                : "";
-
-            const previousSnapshot = lastCustomerSnapshotRef.current[key];
-            const isActive = idsMatch(ticket.id, activeTicketRef.current);
-
-            // First time
-            if (previousSnapshot === undefined) {
-              nextUnread[key] = nextUnread[key] || 0;
-            }
-            // New message
-            else if (snapshot && previousSnapshot !== snapshot && !isActive) {
-              nextUnread[key] = (nextUnread[key] || 0) + 1;
-            }
-
-            nextSnapshots[key] = snapshot;
-          });
-
-          lastCustomerSnapshotRef.current = nextSnapshots;
-
-          const mappedWithUnread = mapped.map((t) => ({
-            ...t,
-            unread: nextUnread[ticketKey(t.id)] || 0,
-          }));
-
-          setTickets(mappedWithUnread);
-
-          return nextUnread;
+          nextReadMap[key] = isActive ? currentCount : readCount;
+          nextUnread[key] = isActive ? 0 : Math.max(0, currentCount - readCount);
+          nextSnapshots[key] =
+            ticket.lastCustomerMessageId != null
+              ? String(ticket.lastCustomerMessageId)
+              : ticket.lastCustomerMessageAt
+              ? String(ticket.lastCustomerMessageAt)
+              : "";
         });
+
+        Object.keys(nextReadMap).forEach((key) => {
+          if (!validKeys.has(key)) {
+            delete nextReadMap[key];
+          }
+        });
+
+        lastCustomerSnapshotRef.current = nextSnapshots;
+        setUnreadByTicket(nextUnread);
+        setReadCustomerCountByTicket(nextReadMap);
+        saveReadCountMap(nextReadMap);
+
+        const mappedWithUnread = mapped.map((ticket) => ({
+          ...ticket,
+          unread: nextUnread[ticketKey(ticket.id)] || 0,
+        }));
+
+        setTickets(mappedWithUnread);
 
         // Set active ticket
         setActiveTicket((current) => {
           if (current != null && mapped.some((t) => idsMatch(t.id, current))) {
             return current;
           }
-          return mapped.length > 0 ? mapped[0].id : null;
+          //return mapped.length > 0 ? mapped[0].id : null;
         });
       })
       .catch((err) => console.error("Fetch users failed:", err));
@@ -820,10 +867,22 @@ export default function HomeDashboard() {
   // ================== RESET UNREAD ==================
   useEffect(() => {
     if (activeTicket == null) return;
+    const key = ticketKey(activeTicket);
+    const currentTicket = ticketsRef.current.find((t) => idsMatch(t.id, activeTicket));
+    const currentCount = parseCount(currentTicket?.customerMessageCount);
+
+    setReadCustomerCountByTicket((prev) => {
+      const next = {
+        ...(prev || {}),
+        [key]: currentCount,
+      };
+      saveReadCountMap(next);
+      return next;
+    });
 
     setUnreadByTicket((prev) => ({
       ...prev,
-      [ticketKey(activeTicket)]: 0,
+      [key]: 0,
     }));
 
     setTickets((prev) =>
@@ -921,6 +980,17 @@ export default function HomeDashboard() {
         [key]: snapshot,
       };
 
+      if (isActive) {
+        setReadCustomerCountByTicket((prev) => {
+          const next = {
+            ...(prev || {}),
+            [key]: parseCount(prev?.[key] || 0) + 1,
+          };
+          saveReadCountMap(next);
+          return next;
+        });
+      }
+
       setUnreadByTicket((prev) => ({
         ...prev,
         [key]: isActive ? 0 : (prev[key] || 0) + 1,
@@ -934,6 +1004,7 @@ export default function HomeDashboard() {
                 preview: messageText || ticket.preview,
                 time: createdAt,
                 lastCustomerMessageAt: createdAt,
+                customerMessageCount: parseCount(ticket.customerMessageCount) + 1,
                 lastCustomerMessageId: payload?.id ?? payload?.message_id ?? ticket.lastCustomerMessageId,
                 unread: isActive ? 0 : (ticket.unread || 0) + 1,
               }
@@ -1117,4 +1188,5 @@ export default function HomeDashboard() {
     </div>
   );
 }
+
 
