@@ -767,7 +767,12 @@ export default function HomeDashboard() {
   // ================== LOAD USERS ==================
   const loadUsers = () => {
     return fetchWithTimeout(`${API_BASE_URL}/users`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Users fetch failed with status ${res.status}`);
+        }
+        return res.json();
+      })
       .then((data) => {
         const mapped = Array.isArray(data)
           ? data.map((user, index) => ({
@@ -835,7 +840,7 @@ export default function HomeDashboard() {
           if (current != null && mapped.some((t) => idsMatch(t.id, current))) {
             return current;
           }
-          //return mapped.length > 0 ? mapped[0].id : null;
+          return mapped.length > 0 ? mapped[0].id : null;
         });
       })
       .catch((err) => console.error("Fetch users failed:", err));
