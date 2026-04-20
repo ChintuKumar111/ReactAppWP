@@ -481,6 +481,11 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
   );
   const messagesContainerRef = useRef(null);
   const ticketData = ticket || {};
+  const referralSource = String(ticketData.source || "").trim();
+  const referralVideoUrl = String(ticketData.video_url || "").trim();
+  const referralThumbnailUrl = String(ticketData.thumbnail_url || "").trim();
+  const referralCtwaClid = String(ticketData.ctwa_clid || "").trim();
+  const hasHttpPrefix = (value) => /^https?:\/\//i.test(String(value || "").trim());
   const ticketMessages = Array.isArray(messages) ? messages : [];
   const freeWindowState = getFreeWindowState(ticketData.lastCustomerMessageAt, nowMs);
   const isFreeWindowOpen = freeWindowState.isOpen;
@@ -540,7 +545,7 @@ const handleInput = (e) => {
         </div>
         
         <div className="chat-header-actions">
-          <button
+          {/* <button
             type="button"
             className="chat-header-btn danger"
             onClick={handleDeleteClick}
@@ -549,7 +554,7 @@ const handleInput = (e) => {
             disabled={activeTicket == null || isDeletingChat}
           >
             <TrashIcon />
-          </button>
+          </button> */}
           <button
             type="button"
             className="chat-header-btn"
@@ -685,6 +690,43 @@ const handleInput = (e) => {
             <h3 id="chat-info-dialog-title">Customer Info</h3>
             <p><strong>Name:</strong> {ticketData.name || "Unknown"}</p>
             <p><strong>Phone:</strong> {ticketData.phone || "N/A"}</p>
+            <div className="chat-info-referral-block">
+              <h4>Referral Data</h4>
+              <p>
+                <strong>Media Type :</strong> {referralSource || "N/A"}
+              </p>
+              <p>
+                <strong>Video Url :</strong>{" "}
+                {referralVideoUrl ? (
+                  hasHttpPrefix(referralVideoUrl) ? (
+                    <a href={referralVideoUrl} target="_blank" rel="noreferrer">
+                      {referralVideoUrl}
+                    </a>
+                  ) : (
+                    referralVideoUrl
+                  )
+                ) : (
+                  "N/A"
+                )}
+              </p>
+              <p>
+                <strong>Thumbnail Url :</strong>{" "}
+                {referralThumbnailUrl ? (
+                  hasHttpPrefix(referralThumbnailUrl) ? (
+                    <a href={referralThumbnailUrl} target="_blank" rel="noreferrer">
+                      {referralThumbnailUrl}
+                    </a>
+                  ) : (
+                    referralThumbnailUrl
+                  )
+                ) : (
+                  "N/A"
+                )}
+              </p>
+              <p>
+                <strong>Ctwa Clid :</strong> {referralCtwaClid || "N/A"}
+              </p>
+            </div>
             <div className="chat-info-dialog-actions">
               <button type="button" className="chat-send-btn" onClick={() => setIsInfoDialogOpen(false)}>
                 Close
@@ -732,6 +774,10 @@ export default function HomeDashboard() {
               id: resolveTicketId(user, index),
               name: user.name ?? "Unknown",
               phone: user.phone ?? "",
+              source: user.source ?? "",
+              video_url: user.video_url ?? "",
+              thumbnail_url: user.thumbnail_url ?? "",
+              ctwa_clid: user.ctwa_clid ?? "",
               channel: "whatsapp",
               time: user.last_seen ?? "",
               preview: user.last_message ?? "",

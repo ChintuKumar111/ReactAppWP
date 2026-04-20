@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const config = require("../config");
+
 const {
   extractInboundMessages,
   hasWhatsAppConfig,
@@ -19,6 +20,34 @@ function runQuery(sql, params = []) {
       resolve(result);
     });
   });
+}
+
+
+function normalizeReferralValue(value) {
+  const cleaned = String(value || "").trim();
+  return cleaned || null;
+}
+
+function extractReferralFields(referral) {
+  if (!referral || typeof referral !== "object") {
+    return null;
+  }
+
+  const source = normalizeReferralValue(referral.source);
+  const videoUrl = normalizeReferralValue(referral.video_url);
+  const thumbnailUrl = normalizeReferralValue(referral.thumbnail_url);
+  const ctwaClid = normalizeReferralValue(referral.ctwa_clid);
+
+  if (!source && !videoUrl && !thumbnailUrl && !ctwaClid) {
+    return null;
+  }
+
+  return {
+    source,
+    videoUrl,
+    thumbnailUrl,
+    ctwaClid,
+  };
 }
 
 async function findOrCreateUserByPhone(phone, name) {
@@ -51,10 +80,37 @@ router.get("/webhook", (req, res) => {
 
 router.post("/webhook", async (req, res) => {
   try {
+    const webhookReferral = req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.referral;
+    if (webhookReferral) {
+      console.log("Inbound referral data:", webhookReferral);
+    }
+
     const inboundMessages = extractInboundMessages(req.body);
 
     for (const inboundMessage of inboundMessages) {
       const user = await findOrCreateUserByPhone(inboundMessage.from, inboundMessage.name);
+      const referralFields = extractReferralFields(inboundMessage.referral);
+
+      if (referralFields) {
+        await runQuery(
+          `
+            UPDATE users
+            SET
+              source = COALESCE(?, source),
+              video_url = COALESCE(?, video_url),
+              thumbnail_url = COALESCE(?, thumbnail_url),
+              ctwa_clid = COALESCE(?, ctwa_clid)
+            WHERE id = ?
+          `,
+          [
+            referralFields.source,
+            referralFields.videoUrl,
+            referralFields.thumbnailUrl,
+            referralFields.ctwaClid,
+            user.id,
+          ]
+        );
+      }
 
       await runQuery(
         "INSERT INTO messages (user_id, message, sender) VALUES (?, ?, ?)",
@@ -84,6 +140,10 @@ router.get("/users", (req, res) => {
         u.id,
         u.name,
         u.phone,
+        u.source,
+        u.video_url,
+        u.thumbnail_url,
+        u.ctwa_clid,
         latest.message AS last_message,
         latest.created_at AS last_seen,
         latest.sender AS last_sender,

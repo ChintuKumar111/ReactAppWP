@@ -905,6 +905,32 @@
   font-size: 14px;
 }
 
+.chat-info-referral-block {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.chat-info-referral-block h4 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.chat-info-referral-block p {
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.chat-info-referral-block a {
+  color: #4338ca;
+  text-decoration: none;
+}
+
+.chat-info-referral-block a:hover {
+  text-decoration: underline;
+}
+
 .chat-info-dialog-actions {
   margin-top: 14px;
   display: flex;

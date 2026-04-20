@@ -129,6 +129,7 @@ function extractInboundMessages(payload) {
           type: message?.type || "unknown",
           whatsappMessageId: message?.id || "",
           timestamp: message?.timestamp || "",
+          referral: message?.referral || null,
         });
       }
     }
