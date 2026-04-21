@@ -456,6 +456,50 @@
   box-shadow: inset 1px 0 0 rgba(111, 125, 151, 0.18);
 }
 
+.chat-panel-empty {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.chat-empty-state {
+  width: min(460px, 100%);
+  padding: 36px 32px;
+  border: 1px solid #dbe4ee;
+  border-radius: 24px;
+  background: linear-gradient(145deg, #ffffff 0%, #f7fbff 100%);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+  text-align: center;
+}
+
+.chat-empty-state-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.chat-empty-state-title {
+  margin: 18px 0 10px;
+  font-size: 28px;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.chat-empty-state-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #475569;
+}
+
 .chat-header {
   display: flex;
   align-items: center;

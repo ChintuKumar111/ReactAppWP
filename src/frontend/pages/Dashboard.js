@@ -186,6 +186,26 @@ async function readErrorMessageFromResponse(response, fallbackMessage) {
   return String(message || fallbackMessage).trim();
 }
 
+function mergeTicketsWithLocalState(nextTickets, previousTickets, activeTicketId) {
+  const previousById = new Map(
+    (Array.isArray(previousTickets) ? previousTickets : []).map((ticket) => [ticketKey(ticket.id), ticket])
+  );
+
+  return (Array.isArray(nextTickets) ? nextTickets : []).map((ticket) => {
+    const previousTicket = previousById.get(ticketKey(ticket.id));
+    const isActiveTicket = idsMatch(ticket.id, activeTicketId);
+    const mergedUnread = isActiveTicket
+      ? 0
+      : Math.max(parseCount(ticket.unread), parseCount(previousTicket?.unread));
+
+    return {
+      ...previousTicket,
+      ...ticket,
+      unread: mergedUnread,
+    };
+  });
+}
+
 // ─── Icons (inline SVG helpers) ─────────────────────────────────────
 
 const Icon = ({ d, size = 16, stroke = "currentColor", fill = "none", strokeWidth = 1.8 }) => (
@@ -540,6 +560,20 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
     Boolean(String(templateName || "").trim()) &&
     !isSubmitting;
 
+  if (activeTicket == null) {
+    return (
+      <div className="chat-panel chat-panel-empty">
+        <div className="chat-empty-state">
+          <div className="chat-empty-state-badge">Inbox Ready</div>
+          <h2 className="chat-empty-state-title">Select a ticket to open the conversation</h2>
+          <p className="chat-empty-state-text">
+            New chats and unread counters will keep updating here. Nothing is selected until you choose a customer from the list.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="chat-panel">
       {/* Header */}
@@ -834,6 +868,11 @@ export default function HomeDashboard() {
   pendingOutgoingByTicketRef.current = pendingOutgoingByTicket;
   ticketsRef.current = tickets;
 
+  const handleSelectTicket = (ticketId) => {
+    if (ticketId == null) return;
+    setActiveTicket(ticketId);
+  };
+
   // ================== LOAD USERS ==================
   const loadUsers = () => {
     return fetchWithTimeout(`${API_BASE_URL}/users`)
@@ -864,9 +903,10 @@ export default function HomeDashboard() {
             }))
           : [];
 
-        setTickets(mapped);
+        setTickets((prev) =>
+          mergeTicketsWithLocalState(mapped, prev, activeTicketRef.current)
+        );
 
-        // Set active ticket
         setActiveTicket((current) => {
           if (current != null && mapped.some((t) => idsMatch(t.id, current))) {
             return current;
@@ -944,7 +984,12 @@ export default function HomeDashboard() {
   }, []);
 
   useEffect(() => {
-    loadMessages();
+    if (activeTicket == null) {
+      setMessages([]);
+      return;
+    }
+
+    loadMessages(activeTicket);
   }, [activeTicket]);
 
   useEffect(() => {
@@ -980,7 +1025,8 @@ export default function HomeDashboard() {
       const isActive = idsMatch(incomingTicketId, activeTicketRef.current);
 
       setTickets((prev) =>
-        prev.map((ticket) =>
+        mergeTicketsWithLocalState(
+          prev.map((ticket) =>
           idsMatch(ticket.id, incomingTicketId)
             ? {
                 ...ticket,
@@ -992,6 +1038,9 @@ export default function HomeDashboard() {
                 unread: isActive ? 0 : (ticket.unread || 0) + 1,
               }
             : ticket
+          ),
+          prev,
+          activeTicketRef.current
         )
       );
 
@@ -1010,7 +1059,9 @@ export default function HomeDashboard() {
         ]);
       }
 
-      loadUsers();
+      window.setTimeout(() => {
+        loadUsers();
+      }, 120);
       if (isActive) {
         loadMessages(incomingTicketId);
       }
@@ -1199,10 +1250,9 @@ export default function HomeDashboard() {
       const remainingTickets = ticketsRef.current.filter(
         (ticket) => !idsMatch(ticket.id, targetTicket)
       );
-      const nextActiveTicket = remainingTickets.length > 0 ? remainingTickets[0].id : null;
 
       setTickets(remainingTickets);
-      setActiveTicket(nextActiveTicket);
+      setActiveTicket(null);
       setMessages([]);
 
       setPendingOutgoingByTicket((prev) => {
@@ -1236,7 +1286,7 @@ export default function HomeDashboard() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         activeTicket={activeTicket}
-        setActiveTicket={setActiveTicket}
+        setActiveTicket={handleSelectTicket}
         tickets={tickets}
         totalUnread={totalUnread}
       />
