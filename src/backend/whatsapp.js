@@ -8,6 +8,72 @@ function hasWhatsAppConfig() {
   return Boolean(config.whatsapp.accessToken && config.whatsapp.phoneNumberId);
 }
 
+function buildWhatsAppErrorMessage(actionLabel, status, errorPayload) {
+  const error = errorPayload && typeof errorPayload === "object" ? errorPayload : {};
+  const parts = [];
+  const primaryMessage = String(error.message || "").trim();
+  const errorType = String(error.type || "").trim();
+  const errorCode = error.code != null ? String(error.code).trim() : "";
+  const errorSubcode = error.error_subcode != null ? String(error.error_subcode).trim() : "";
+  const traceId = String(error.fbtrace_id || "").trim();
+
+  if (primaryMessage) {
+    parts.push(primaryMessage);
+  } else {
+    parts.push(`${actionLabel} failed with status ${status}.`);
+  }
+
+  if (errorType || errorCode || errorSubcode) {
+    const meta = [
+      errorType ? `type: ${errorType}` : "",
+      errorCode ? `code: ${errorCode}` : "",
+      errorSubcode ? `subcode: ${errorSubcode}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    if (meta) {
+      parts.push(`(${meta})`);
+    }
+  }
+
+  const lowerMessage = primaryMessage.toLowerCase();
+  const lowerType = errorType.toLowerCase();
+
+  if (
+    errorCode === "190" ||
+    lowerMessage.includes("access token") ||
+    lowerMessage.includes("session has expired") ||
+    lowerType.includes("oauth")
+  ) {
+    parts.push("WhatsApp access token may be expired or invalid.");
+  }
+
+  if (traceId) {
+    parts.push(`trace: ${traceId}`);
+  }
+
+  return parts.join(" ");
+}
+
+async function parseWhatsAppResponse(response, actionLabel) {
+  let data = {};
+
+  try {
+    data = await response.json();
+  } catch (_error) {
+    data = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      buildWhatsAppErrorMessage(actionLabel, response.status, data?.error)
+    );
+  }
+
+  return data;
+}
+
 async function sendWhatsAppTextMessage(to, body) {
   if (!hasWhatsAppConfig()) {
     throw new Error("Missing WhatsApp Cloud API configuration.");
@@ -33,13 +99,7 @@ async function sendWhatsAppTextMessage(to, body) {
     }),
   });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "WhatsApp message send failed.");
-  }
-
-  return data;
+  return parseWhatsAppResponse(response, "WhatsApp message send");
 }
 
 async function sendWhatsAppTemplateMessage(to, templateName, languageCode, bodyParameters = []) {
@@ -93,13 +153,7 @@ async function sendWhatsAppTemplateMessage(to, templateName, languageCode, bodyP
     body: JSON.stringify(payload),
   });
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "WhatsApp template message send failed.");
-  }
-
-  return data;
+  return parseWhatsAppResponse(response, "WhatsApp template message send");
 }
 
 function extractInboundMessages(payload) {

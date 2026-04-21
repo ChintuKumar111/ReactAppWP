@@ -1,0 +1,362 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ─────────────────────────────────────────
+   ROOT / PAGE WRAPPER
+───────────────────────────────────────── */
+.fz-login-root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e0ecf7;
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* ─────────────────────────────────────────
+   CARD
+───────────────────────────────────────── */
+.fz-card {
+  display: flex;
+  width: 900px;
+  max-width: 96vw;
+  min-height: 560px;
+  background: #ffffff;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow:
+    0 24px 80px rgba(22, 34, 41, 0.13),
+    0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* ─────────────────────────────────────────
+   LEFT PANEL
+───────────────────────────────────────── */
+.fz-left {
+  width: 340px;
+  min-width: 300px;
+background: linear-gradient(160deg, #2c3ecf 0%, #4260ea 55%, #6f85ff 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 40px 36px 44px;
+  position: relative;
+  overflow: hidden;
+}
+
+.fz-left::before {
+  content: '';
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  top: -80px;
+  right: -120px;
+}
+
+.fz-left::after {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  bottom: -60px;
+  left: -60px;
+}
+
+/* Logo */
+.fz-logo-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1;
+}
+
+.fz-logo-img {
+  width: 44px;
+  height: 44px;
+  background: #fff;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 3px;
+}
+
+.fz-logo-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.fz-logo-name {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 800;
+  font-size: 19px;
+  color: #ffffff;
+  letter-spacing: -0.3px;
+}
+
+/* Body copy */
+.fz-left-body {
+  z-index: 1;
+}
+
+.fz-tagline {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.35;
+  margin-bottom: 16px;
+  letter-spacing: -0.5px;
+}
+
+.fz-tagline span {
+  opacity: 0.75;
+  font-weight: 400;
+  font-size: 22px;
+}
+
+.fz-sub {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.6;
+  max-width: 240px;
+}
+
+/* Dot indicators */
+.fz-dots {
+  display: flex;
+  gap: 7px;
+  z-index: 1;
+}
+
+.fz-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  transition: width 0.3s;
+}
+
+.fz-dot.active {
+  background: #ffffff;
+  width: 22px;
+  border-radius: 4px;
+}
+
+/* ─────────────────────────────────────────
+   RIGHT PANEL
+───────────────────────────────────────── */
+.fz-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 52px 52px 48px;
+}
+
+.fz-welcome {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: #111111;
+  letter-spacing: -0.6px;
+  margin-bottom: 6px;
+}
+
+.fz-subtitle {
+  font-size: 14px;
+  color: #888888;
+  margin-bottom: 36px;
+}
+
+/* ─────────────────────────────────────────
+   FORM FIELDS
+───────────────────────────────────────── */
+.fz-field {
+  margin-bottom: 18px;
+}
+
+.fz-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #555555;
+  margin-bottom: 7px;
+}
+
+.fz-input-wrap {
+  position: relative;
+}
+
+.fz-input {
+  width: 100%;
+  padding: 13px 16px;
+  border: 1.5px solid #e2e2e2;
+  border-radius: 10px;
+  font-size: 15px;
+  font-family: 'DM Sans', sans-serif;
+  color: #111111;
+  background: #fafafa;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.fz-input:focus {
+      background: #ffffff;
+border-color: #4260ea;
+box-shadow: 0 0 0 3px rgba(66, 96, 234, 0.15);}
+
+.fz-input--password {
+  padding-right: 44px;
+}
+
+/* Show/hide password toggle */
+.fz-eye-btn {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #aaaaaa;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.fz-eye-btn:hover {
+  color: #2d8a2d;
+}
+
+/* Forgot password row */
+.fz-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: -4px;
+  margin-bottom: 28px;
+}
+
+.fz-forgot {
+  font-size: 13px;
+  color: #2d8a2d;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.fz-forgot:hover {
+  opacity: 0.7;
+}
+
+/* ─────────────────────────────────────────
+   SUBMIT BUTTON
+───────────────────────────────────────── */
+.fz-btn {
+  width: 100%;
+  padding: 15px;
+  background: linear-gradient(135deg, #4260ea, #6f85ff);
+box-shadow: 0 6px 20px rgba(66, 96, 234, 0.3);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 6px 20px rgba(45, 101, 138, 0.3);
+}
+
+.fz-btn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(45, 138, 45, 0.35);
+}
+
+.fz-btn:active {
+  transform: translateY(0);
+}
+
+/* ─────────────────────────────────────────
+   SIGN UP LINK
+───────────────────────────────────────── */
+.fz-signup {
+  text-align: center;
+  margin-top: 28px;
+  font-size: 13.5px;
+  color: #888888;
+}
+
+.fz-signup a {
+  color: #2d8a2d;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fz-signup a:hover {
+  text-decoration: underline;
+}
+
+/* ─────────────────────────────────────────
+   RESPONSIVE
+───────────────────────────────────────── */
+@media (max-width: 680px) {
+  .fz-left {
+    display: none;
+  }
+
+  .fz-right {
+    padding: 40px 28px;
+  }
+
+  .fz-card {
+    border-radius: 16px;
+  }
+}
+
+/* Error box */
+.fz-error {
+  background: #ffe6e6;
+  color: #d8000c;
+  padding: 10px 35px 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 14px;
+  border: 1px solid #ffb3b3;
+  position: relative;
+}
+
+/* Close button */
+.fz-error-close {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+/* Disabled button */
+.fz-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

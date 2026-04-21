@@ -3,6 +3,7 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 
+const authRoutes = require("./routes/authRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const config = require("./config");
 
@@ -13,22 +14,24 @@ const io = new Server(server, {
   cors: { origin: "*" }
 });
 
-// Middleware
+// ✅ Middleware FIRST
 app.use(cors());
 app.use(express.json());
 
-// Make io available in routes
+// ✅ Make io available in routes
 app.use((req, res, next) => {
   req.io = io;
   next();
 });
 
-// Routes
+// ✅ Routes AFTER middleware
+app.use("/auth", authRoutes);
+app.use("/", chatRoutes);
+
+// Health check
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
-
-app.use("/", chatRoutes);
 
 // Socket
 io.on("connection", (socket) => {

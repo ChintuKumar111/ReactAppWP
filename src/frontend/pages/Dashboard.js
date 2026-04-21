@@ -169,6 +169,23 @@ function formatTicketTime(value) {
   });
 }
 
+async function readErrorMessageFromResponse(response, fallbackMessage) {
+  let errorPayload = null;
+
+  try {
+    errorPayload = await response.json();
+  } catch (_error) {
+    errorPayload = null;
+  }
+
+  const message =
+    errorPayload?.error ||
+    errorPayload?.message ||
+    fallbackMessage;
+
+  return String(message || fallbackMessage).trim();
+}
+
 // ─── Icons (inline SVG helpers) ─────────────────────────────────────
 
 const Icon = ({ d, size = 16, stroke = "currentColor", fill = "none", strokeWidth = 1.8 }) => (
@@ -441,6 +458,7 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
   const [input, setInput] = useState("");
   const [nowMs, setNowMs] = useState(Date.now());
   const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [templateName, setTemplateName] = useState(
     process.env.REACT_APP_WHATSAPP_TEMPLATE_NAME || "hello_world"
   );
@@ -457,30 +475,38 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
   const ticketMessages = Array.isArray(messages) ? messages : [];
   const freeWindowState = getFreeWindowState(ticketData.lastCustomerMessageAt, nowMs);
   const isFreeWindowOpen = freeWindowState.isOpen;
-  
-const handleInput = (e) => {
-  const el = e.target;
-  el.style.height = "auto";
-  el.style.height = Math.min(el.scrollHeight, 200) + "px";
-};
-  const handleSend = () => {
+
+  const handleInput = (e) => {
+    const el = e.target;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || activeTicket == null || typeof onSendMessage !== "function") return;
-    onSendMessage(trimmed, {
-      isTemplate: !isFreeWindowOpen,
-      templateName,
-      languageCode: templateLanguage,
-    });
-    setInput("");
+
+    if (!isFreeWindowOpen && !String(templateName || "").trim()) {
+      window.alert("Template name is required before sending a template message.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await onSendMessage(trimmed, {
+        isTemplate: !isFreeWindowOpen,
+        templateName,
+        languageCode: templateLanguage,
+      });
+      setInput("");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleInfoClick = () => {
     setIsInfoDialogOpen(true);
-  };
-
-  const handleDeleteClick = () => {
-    if (activeTicket == null || typeof onDeleteChat !== "function" || isDeletingChat) return;
-    onDeleteChat();
   };
 
   useEffect(() => {
@@ -495,6 +521,12 @@ const handleInput = (e) => {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  const canSendReply = Boolean(input.trim()) && !isSubmitting;
+  const canSendTemplate =
+    Boolean(input.trim()) &&
+    Boolean(String(templateName || "").trim()) &&
+    !isSubmitting;
 
   return (
     <div className="chat-panel">
@@ -589,54 +621,89 @@ const handleInput = (e) => {
       </div>
       {/* Input Area */}
       <div className="chat-input-area">
-        {/* <div className="chat-input-toolbar">
-          <button className="chat-toolbar-btn"> '#' for saved replies & interactive messaTypeges</button>
-          <button className="chat-toolbar-btn">'@' for agents</button>
-          <button className="chat-toolbar-btn">'$' for Whatsapp template...</button>
-        </div> */}
-        <div className="chat-input-row">
-          <textarea
-            className="chat-input-box"
-           placeholder="Type Message Here..."
-            value={input}
-            disabled={!isFreeWindowOpen}
-            onInput={handleInput}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            rows={1}
-          />
-          <button className="chat-attach-btn">
-            <svg width="16" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-            </svg>
-          </button>
-          <button className="chat-send-btn" onClick={handleSend} disabled={!input.trim()}>
-            {isFreeWindowOpen ? "Send" : "Send Template"} <SendIcon />
-          </button>
-        </div>
-        {!isFreeWindowOpen && (
-          <div className="chat-window-hint">
-            <div className="chat-window-hint-text">
-              24-hour window is closed. WhatsApp template is required.
+        {isFreeWindowOpen ? (
+          <div className="chat-input-row">
+            <textarea
+              className="chat-input-box"
+              placeholder="Type your reply here..."
+              value={input}
+              onInput={handleInput}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              rows={1}
+            />
+            <button className="chat-attach-btn" type="button">
+              <svg width="16" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <button className="chat-send-btn" type="button" onClick={handleSend} disabled={!canSendReply}>
+              {isSubmitting ? "Sending..." : "Send"} <SendIcon />
+            </button>
+          </div>
+        ) : (
+          <div className="chat-template-composer">
+            <div className="chat-window-hint">
+              <div className="chat-window-hint-badge">Template required</div>
+              <div className="chat-window-hint-text">
+                The 24-hour WhatsApp window is closed. Send an approved template from the dashboard to reopen the conversation.
+              </div>
             </div>
-            <div className="chat-template-fields">
-              <input
-                className="chat-template-input"
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="Template name"
+
+            <div className="chat-template-grid">
+              <label className="chat-template-field">
+                <span>Template name</span>
+                <input
+                  className="chat-template-input"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="hello_world"
+                />
+              </label>
+
+              <label className="chat-template-field">
+                <span>Language code</span>
+                <input
+                  className="chat-template-input"
+                  value={templateLanguage}
+                  onChange={(e) => setTemplateLanguage(e.target.value)}
+                  placeholder="en_US"
+                />
+              </label>
+            </div>
+
+            <label className="chat-template-field">
+              <span>Template body value</span>
+              <textarea
+                className="chat-input-box chat-template-body"
+                placeholder="Enter the value to pass into the template body..."
+                value={input}
+                onInput={handleInput}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                rows={3}
               />
-              <input
-                className="chat-template-input"
-                value={templateLanguage}
-                onChange={(e) => setTemplateLanguage(e.target.value)}
-                placeholder="Language code (en_US)"
-              />
+            </label>
+
+            <div className="chat-template-actions">
+              <button
+                className="chat-send-btn chat-send-template-btn"
+                type="button"
+                onClick={handleSend}
+                disabled={!canSendTemplate}
+              >
+                {isSubmitting ? "Sending Template..." : "Send Template"} <SendIcon />
+              </button>
             </div>
           </div>
         )}
@@ -950,7 +1017,7 @@ export default function HomeDashboard() {
   }, []);
 
   // ================== SEND MESSAGE ==================
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, options = {}) => {
     if (activeTicket == null) return;
 
     const trimmed = String(text || "").trim();
@@ -992,19 +1059,35 @@ export default function HomeDashboard() {
     );
 
     try {
-      const response = await fetch(`${API_BASE_URL}/send-message`, {
+      const shouldSendTemplate = Boolean(options?.isTemplate);
+      const endpoint = shouldSendTemplate ? "/send-template-message" : "/send-message";
+      const payload = shouldSendTemplate
+        ? {
+            userId: targetTicket,
+            templateName: String(options?.templateName || "").trim(),
+            languageCode: String(options?.languageCode || "").trim(),
+            bodyParameters: [trimmed],
+          }
+        : {
+            userId: targetTicket,
+            message: trimmed,
+          };
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          userId: targetTicket,
-          message: trimmed,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        throw new Error(`Send failed with status ${response.status}`);
+        const actionLabel = shouldSendTemplate ? "Template send failed" : "Message send failed";
+        const errorMessage = await readErrorMessageFromResponse(
+          response,
+          `${actionLabel} with status ${response.status}`
+        );
+        throw new Error(errorMessage);
       }
 
       setPendingOutgoingByTicket((prev) => {
@@ -1033,6 +1116,7 @@ export default function HomeDashboard() {
       }
 
       console.error("Send message failed:", err);
+      window.alert(`Unable to send message.\n\nReason: ${err?.message || "Unknown error"}`);
     }
   };
 
