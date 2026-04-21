@@ -459,6 +459,7 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
   const [nowMs, setNowMs] = useState(Date.now());
   const [isInfoDialogOpen, setIsInfoDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [composerMode, setComposerMode] = useState("text");
   const [templateName, setTemplateName] = useState(
     process.env.REACT_APP_WHATSAPP_TEMPLATE_NAME || "hello_world"
   );
@@ -475,6 +476,7 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
   const ticketMessages = Array.isArray(messages) ? messages : [];
   const freeWindowState = getFreeWindowState(ticketData.lastCustomerMessageAt, nowMs);
   const isFreeWindowOpen = freeWindowState.isOpen;
+  const isTemplateMode = !isFreeWindowOpen || composerMode === "template";
 
   const handleInput = (e) => {
     const el = e.target;
@@ -486,7 +488,7 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
     const trimmed = input.trim();
     if (!trimmed || activeTicket == null || typeof onSendMessage !== "function") return;
 
-    if (!isFreeWindowOpen && !String(templateName || "").trim()) {
+    if (isTemplateMode && !String(templateName || "").trim()) {
       window.alert("Template name is required before sending a template message.");
       return;
     }
@@ -495,7 +497,7 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
 
     try {
       await onSendMessage(trimmed, {
-        isTemplate: !isFreeWindowOpen,
+        isTemplate: isTemplateMode,
         templateName,
         languageCode: templateLanguage,
       });
@@ -521,6 +523,16 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!isFreeWindowOpen) {
+      setComposerMode("template");
+      return;
+    }
+
+    setComposerMode("text");
+    setInput("");
+  }, [ticketData.id, isFreeWindowOpen]);
 
   const canSendReply = Boolean(input.trim()) && !isSubmitting;
   const canSendTemplate =
@@ -621,37 +633,42 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
       </div>
       {/* Input Area */}
       <div className="chat-input-area">
-        {isFreeWindowOpen ? (
-          <div className="chat-input-row">
-            <textarea
-              className="chat-input-box"
-              placeholder="Type your reply here..."
-              value={input}
-              onInput={handleInput}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              rows={1}
-            />
-            <button className="chat-attach-btn" type="button">
-              <svg width="16" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-            </button>
-            <button className="chat-send-btn" type="button" onClick={handleSend} disabled={!canSendReply}>
-              {isSubmitting ? "Sending..." : "Send"} <SendIcon />
-            </button>
+        {isFreeWindowOpen && (
+          <div className="chat-composer-switch">
+            <div className="chat-composer-toggle" role="tablist" aria-label="Message mode">
+              <button
+                type="button"
+                className={`chat-composer-toggle-btn ${!isTemplateMode ? "active" : ""}`}
+                onClick={() => setComposerMode("text")}
+              >
+                Normal text
+              </button>
+              <button
+                type="button"
+                className={`chat-composer-toggle-btn ${isTemplateMode ? "active" : ""}`}
+                onClick={() => setComposerMode("template")}
+              >
+                Template
+              </button>
+            </div>
+            <div className="chat-composer-switch-copy">
+              {isTemplateMode
+                ? "Using a template even though the free window is still open."
+                : "Free window is open, so you can send a normal text reply."}
+            </div>
           </div>
-        ) : (
+        )}
+
+        {isTemplateMode ? (
           <div className="chat-template-composer">
             <div className="chat-window-hint">
-              <div className="chat-window-hint-badge">Template required</div>
+              <div className="chat-window-hint-badge">
+                {isFreeWindowOpen ? "Template mode" : "Template required"}
+              </div>
               <div className="chat-window-hint-text">
-                The 24-hour WhatsApp window is closed. Send an approved template from the dashboard to reopen the conversation.
+                {isFreeWindowOpen
+                  ? "Send an approved WhatsApp template from the dashboard. You can switch back to normal text at any time."
+                  : "The 24-hour WhatsApp window is closed. Send an approved template from the dashboard to reopen the conversation."}
               </div>
             </div>
 
@@ -705,6 +722,31 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
                 {isSubmitting ? "Sending Template..." : "Send Template"} <SendIcon />
               </button>
             </div>
+          </div>
+        ) : (
+          <div className="chat-input-row">
+            <textarea
+              className="chat-input-box"
+              placeholder="Type your reply here..."
+              value={input}
+              onInput={handleInput}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              rows={1}
+            />
+            <button className="chat-attach-btn" type="button">
+              <svg width="16" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
+            <button className="chat-send-btn" type="button" onClick={handleSend} disabled={!canSendReply}>
+              {isSubmitting ? "Sending..." : "Send"} <SendIcon />
+            </button>
           </div>
         )}
       </div>

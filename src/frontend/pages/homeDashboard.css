@@ -764,6 +764,9 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, #ffffff 100%);
   box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.05);
   padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .chat-input-toolbar {
@@ -788,6 +791,7 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
+  animation: composerFadeIn 0.18s ease;
 }
 
 .chat-input-box {
@@ -976,6 +980,57 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  animation: composerFadeIn 0.2s ease;
+}
+
+.chat-composer-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dbe4ee;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.chat-composer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #e8eefc;
+}
+
+.chat-composer-toggle-btn {
+  border: none;
+  background: transparent;
+  color: #475569;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.chat-composer-toggle-btn.active {
+  background: #4361ee;
+  color: #ffffff;
+  box-shadow: 0 8px 16px rgba(67, 97, 238, 0.18);
+}
+
+.chat-composer-toggle-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.75);
+  color: #1e293b;
+}
+
+.chat-composer-switch-copy {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.5;
+  text-align: right;
 }
 
 .chat-template-grid {
@@ -1022,7 +1077,35 @@
   min-width: 170px;
 }
 
+@keyframes composerFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 768px) {
+  .chat-composer-switch {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .chat-composer-switch-copy {
+    text-align: left;
+  }
+
+  .chat-composer-toggle {
+    width: 100%;
+  }
+
+  .chat-composer-toggle-btn {
+    flex: 1;
+  }
+
   .chat-window-hint {
     flex-direction: column;
   }
