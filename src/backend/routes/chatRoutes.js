@@ -113,7 +113,7 @@ router.post("/webhook", async (req, res) => {
       }
 
       await runQuery(
-        "INSERT INTO messages (user_id, message, sender) VALUES (?, ?, ?)",
+        "INSERT INTO messages (user_id, message, sender, is_read) VALUES (?, ?, ?, 0)",
         [user.id, inboundMessage.text, "customer"]
       );
 
@@ -148,6 +148,7 @@ router.get("/users", (req, res) => {
         latest.created_at AS last_seen,
         latest.sender AS last_sender,
         COALESCE(customer_counts.customer_message_count, 0) AS customer_message_count,
+        COALESCE(unread_counts.unread_message_count, 0) AS unread_message_count,
         customer_latest.last_customer_message_id,
         customer_latest.last_customer_message_at
       FROM users u
@@ -170,6 +171,13 @@ router.get("/users", (req, res) => {
         GROUP BY user_id
       ) customer_counts
         ON customer_counts.user_id = u.id
+      LEFT JOIN (
+        SELECT user_id, COUNT(*) AS unread_message_count
+        FROM messages
+        WHERE sender = 'customer' AND COALESCE(is_read, 0) = 0
+        GROUP BY user_id
+      ) unread_counts
+        ON unread_counts.user_id = u.id
       LEFT JOIN (
         SELECT
           m.user_id,
@@ -206,6 +214,34 @@ router.get("/messages/:userId", (req, res) => {
       res.json(result);
     }
   );
+});
+
+router.post("/messages/:userId/read", async (req, res) => {
+  const userId = req.params.userId;
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required." });
+    }
+
+    const result = await runQuery(
+      `
+        UPDATE messages
+        SET is_read = 1
+        WHERE user_id = ? AND sender = 'customer' AND COALESCE(is_read, 0) = 0
+      `,
+      [userId]
+    );
+
+    return res.json({
+      success: true,
+      userId,
+      markedRead: result?.affectedRows || 0,
+    });
+  } catch (error) {
+    console.error("Mark read failed:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 router.delete("/chats/:userId", async (req, res) => {
@@ -265,7 +301,7 @@ router.post("/send-message", async (req, res) => {
     const whatsappResponse = await sendWhatsAppTextMessage(user.phone, trimmedMessage);
 
     await runQuery(
-      "INSERT INTO messages (user_id, message, sender) VALUES (?, ?, 'admin')",
+      "INSERT INTO messages (user_id, message, sender, is_read) VALUES (?, ?, 'admin', 1)",
       [userId, trimmedMessage]
     );
 
@@ -338,7 +374,7 @@ router.post("/send-template-message", async (req, res) => {
         : `Template: ${chosenTemplateName}`;
 
     await runQuery(
-      "INSERT INTO messages (user_id, message, sender) VALUES (?, ?, 'admin')",
+      "INSERT INTO messages (user_id, message, sender, is_read) VALUES (?, ?, 'admin', 1)",
       [userId, readableText]
     );
 

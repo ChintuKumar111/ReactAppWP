@@ -7,7 +7,6 @@ const FREE_WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
 const DASHBOARD_POLL_INTERVAL_MS = 1000;
 const DASHBOARD_FETCH_TIMEOUT_MS = 5000;
 const SOCKET_IO_SCRIPT_ID = "dashboard-socket-io-client-script";
-const READ_COUNT_STORAGE_KEY = "dashboard-read-customer-count-v1";
 
 function fetchWithTimeout(url, options = {}, timeoutMs = DASHBOARD_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -38,37 +37,6 @@ function parseCount(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.floor(parsed);
-}
-
-function loadReadCountMap() {
-  if (typeof window === "undefined") return {};
-
-  try {
-    const raw = window.localStorage.getItem(READ_COUNT_STORAGE_KEY);
-    if (!raw) return {};
-
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-
-    const cleaned = {};
-    Object.entries(parsed).forEach(([key, value]) => {
-      cleaned[key] = parseCount(value);
-    });
-    return cleaned;
-  } catch (err) {
-    console.error("Failed to read unread persistence:", err);
-    return {};
-  }
-}
-
-function saveReadCountMap(nextMap) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(READ_COUNT_STORAGE_KEY, JSON.stringify(nextMap || {}));
-  } catch (err) {
-    console.error("Failed to persist unread state:", err);
-  }
 }
 
 function resolveTicketId(user, index) {
@@ -747,21 +715,14 @@ export default function HomeDashboard() {
   const [messages, setMessages] = useState([]);
 
   // ✅ FIXED: properly store unread state
-  const [unreadByTicket, setUnreadByTicket] = useState({});
   const [pendingOutgoingByTicket, setPendingOutgoingByTicket] = useState({});
-  const [readCustomerCountByTicket, setReadCustomerCountByTicket] = useState(() =>
-    loadReadCountMap()
-  );
   const [isDeletingChat, setIsDeletingChat] = useState(false);
 
-  const lastCustomerSnapshotRef = useRef({});
   const pendingOutgoingByTicketRef = useRef({});
-  const readCustomerCountByTicketRef = useRef(readCustomerCountByTicket);
   const ticketsRef = useRef(tickets);
   const activeTicketRef = useRef(null);
   activeTicketRef.current = activeTicket;
   pendingOutgoingByTicketRef.current = pendingOutgoingByTicket;
-  readCustomerCountByTicketRef.current = readCustomerCountByTicket;
   ticketsRef.current = tickets;
 
   // ================== LOAD USERS ==================
@@ -790,88 +751,47 @@ export default function HomeDashboard() {
               lastCustomerMessageId: user.last_customer_message_id ?? null,
               lastCustomerMessageAt: user.last_customer_message_at ?? "",
               badge: "Bot",
-              unread: 0,
+              unread: parseCount(user.unread_message_count),
             }))
           : [];
 
-        // ✅ UNREAD LOGIC
-        const nextReadMap = { ...(readCustomerCountByTicketRef.current || {}) };
-        const nextUnread = {};
-        const nextSnapshots = {};
-        const activeTicketKey = ticketKey(activeTicketRef.current);
-        const validKeys = new Set(mapped.map((ticket) => ticketKey(ticket.id)));
-
-        mapped.forEach((ticket) => {
-          const key = ticketKey(ticket.id);
-          const currentCount = parseCount(ticket.customerMessageCount);
-          const readCount = Math.min(parseCount(nextReadMap[key] || 0), currentCount);
-          const isActive = key === activeTicketKey;
-
-          nextReadMap[key] = isActive ? currentCount : readCount;
-          nextUnread[key] = isActive ? 0 : Math.max(0, currentCount - readCount);
-          nextSnapshots[key] =
-            ticket.lastCustomerMessageId != null
-              ? String(ticket.lastCustomerMessageId)
-              : ticket.lastCustomerMessageAt
-              ? String(ticket.lastCustomerMessageAt)
-              : "";
-        });
-
-        Object.keys(nextReadMap).forEach((key) => {
-          if (!validKeys.has(key)) {
-            delete nextReadMap[key];
-          }
-        });
-
-        lastCustomerSnapshotRef.current = nextSnapshots;
-        setUnreadByTicket(nextUnread);
-        setReadCustomerCountByTicket(nextReadMap);
-        saveReadCountMap(nextReadMap);
-
-        const mappedWithUnread = mapped.map((ticket) => ({
-          ...ticket,
-          unread: nextUnread[ticketKey(ticket.id)] || 0,
-        }));
-
-        setTickets(mappedWithUnread);
+        setTickets(mapped);
 
         // Set active ticket
         setActiveTicket((current) => {
           if (current != null && mapped.some((t) => idsMatch(t.id, current))) {
             return current;
           }
-          return mapped.length > 0 ? mapped[0].id : null;
+          return null;
         });
       })
       .catch((err) => console.error("Fetch users failed:", err));
   };
 
+  const markMessagesAsRead = async (ticketId) => {
+    if (ticketId == null) return;
+    try {
+      await fetchWithTimeout(`${API_BASE_URL}/messages/${encodeURIComponent(ticketId)}/read`, {
+        method: "POST",
+      });
+    } catch (err) {
+      console.error("Mark messages as read failed:", err);
+    }
+  };
+
   // ================== RESET UNREAD ==================
   useEffect(() => {
     if (activeTicket == null) return;
-    const key = ticketKey(activeTicket);
-    const currentTicket = ticketsRef.current.find((t) => idsMatch(t.id, activeTicket));
-    const currentCount = parseCount(currentTicket?.customerMessageCount);
-
-    setReadCustomerCountByTicket((prev) => {
-      const next = {
-        ...(prev || {}),
-        [key]: currentCount,
-      };
-      saveReadCountMap(next);
-      return next;
-    });
-
-    setUnreadByTicket((prev) => ({
-      ...prev,
-      [key]: 0,
-    }));
 
     setTickets((prev) =>
       prev.map((t) =>
         idsMatch(t.id, activeTicket) ? { ...t, unread: 0 } : t
       )
     );
+
+    markMessagesAsRead(activeTicket).then(() => {
+      loadUsers();
+    });
   }, [activeTicket]);
 
   // ================== LOAD MESSAGES ==================
@@ -948,35 +868,7 @@ export default function HomeDashboard() {
       const nowIso = new Date().toISOString();
       const messageText = String(payload?.message ?? "").trim();
       const createdAt = payload?.created_at || nowIso;
-      const snapshot =
-        payload?.id != null
-          ? String(payload.id)
-          : payload?.message_id != null
-          ? String(payload.message_id)
-          : String(createdAt);
-      const key = ticketKey(incomingTicketId);
       const isActive = idsMatch(incomingTicketId, activeTicketRef.current);
-
-      lastCustomerSnapshotRef.current = {
-        ...lastCustomerSnapshotRef.current,
-        [key]: snapshot,
-      };
-
-      if (isActive) {
-        setReadCustomerCountByTicket((prev) => {
-          const next = {
-            ...(prev || {}),
-            [key]: parseCount(prev?.[key] || 0) + 1,
-          };
-          saveReadCountMap(next);
-          return next;
-        });
-      }
-
-      setUnreadByTicket((prev) => ({
-        ...prev,
-        [key]: isActive ? 0 : (prev[key] || 0) + 1,
-      }));
 
       setTickets((prev) =>
         prev.map((ticket) =>
@@ -993,6 +885,10 @@ export default function HomeDashboard() {
             : ticket
         )
       );
+
+      if (isActive) {
+        markMessagesAsRead(incomingTicketId);
+      }
 
       if (isActive) {
         setMessages((prev) => [
@@ -1183,29 +1079,11 @@ export default function HomeDashboard() {
       setActiveTicket(nextActiveTicket);
       setMessages([]);
 
-      setUnreadByTicket((prev) => {
-        const next = { ...(prev || {}) };
-        delete next[targetKey];
-        return next;
-      });
-
       setPendingOutgoingByTicket((prev) => {
         const next = { ...(prev || {}) };
         delete next[targetKey];
         return next;
       });
-
-      setReadCustomerCountByTicket((prev) => {
-        const next = { ...(prev || {}) };
-        delete next[targetKey];
-        saveReadCountMap(next);
-        return next;
-      });
-
-      lastCustomerSnapshotRef.current = {
-        ...(lastCustomerSnapshotRef.current || {}),
-      };
-      delete lastCustomerSnapshotRef.current[targetKey];
 
       await loadUsers();
     } catch (err) {
