@@ -50,59 +50,6 @@ function extractReferralFields(referral) {
   };
 }
 
-function toMysqlDateTime(value) {
-  const parsed = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return parsed.toISOString().slice(0, 19).replace("T", " ");
-}
-
-async function findMessageByWhatsAppId(whatsappMessageId) {
-  const normalizedId = String(whatsappMessageId || "").trim();
-  if (!normalizedId) {
-    return null;
-  }
-
-  const rows = await runQuery("SELECT * FROM messages WHERE whatsapp_message_id = ? LIMIT 1", [normalizedId]);
-  return rows[0] || null;
-}
-
-async function findMessageById(messageId) {
-  const rows = await runQuery(
-    `
-      SELECT
-        *,
-        COALESCE(whatsapp_timestamp, created_at) AS display_created_at
-      FROM messages
-      WHERE id = ?
-      LIMIT 1
-    `,
-    [messageId]
-  );
-
-  return rows[0] || null;
-}
-
-function buildSocketMessage(row) {
-  if (!row) {
-    return null;
-  }
-
-  return {
-    id: row.id,
-    userId: row.user_id,
-    message: row.message,
-    sender: row.sender,
-    created_at: row.created_at || new Date().toISOString(),
-    sort_created_at:
-      row.display_created_at || row.whatsapp_timestamp || row.created_at || new Date().toISOString(),
-    whatsapp_message_id: row.whatsapp_message_id || null,
-  };
-}
-
 async function findOrCreateUserByPhone(phone, name) {
   const users = await runQuery("SELECT * FROM users WHERE phone = ? LIMIT 1", [phone]);
 
@@ -143,7 +90,6 @@ router.post("/webhook", async (req, res) => {
     for (const inboundMessage of inboundMessages) {
       const user = await findOrCreateUserByPhone(inboundMessage.from, inboundMessage.name);
       const referralFields = extractReferralFields(inboundMessage.referral);
-      const whatsappTimestamp = toMysqlDateTime(inboundMessage.whatsappTimestamp);
 
       if (referralFields) {
         await runQuery(
@@ -166,36 +112,17 @@ router.post("/webhook", async (req, res) => {
         );
       }
 
-      const existingMessage = await findMessageByWhatsAppId(inboundMessage.whatsappMessageId);
-      if (existingMessage) {
-        continue;
-      }
-
-      const insertResult = await runQuery(
-        `
-          INSERT INTO messages (
-            user_id,
-            message,
-            sender,
-            is_read,
-            whatsapp_message_id,
-            whatsapp_timestamp
-          )
-          VALUES (?, ?, ?, 0, ?, ?)
-        `,
-        [
-          user.id,
-          inboundMessage.text,
-          "customer",
-          inboundMessage.whatsappMessageId || null,
-          whatsappTimestamp,
-        ]
+      await runQuery(
+        "INSERT INTO messages (user_id, message, sender, is_read) VALUES (?, ?, ?, 0)",
+        [user.id, inboundMessage.text, "customer"]
       );
 
-      const storedMessage = await findMessageById(insertResult.insertId);
-
-      if (req.io && storedMessage) {
-        req.io.emit("newMessage", buildSocketMessage(storedMessage));
+      if (req.io) {
+        req.io.emit("newMessage", {
+          userId: user.id,
+          message: inboundMessage.text,
+          sender: "customer",
+        });
       }
     }
 
@@ -218,7 +145,7 @@ router.get("/users", (req, res) => {
         u.thumbnail_url,
         u.ctwa_clid,
         latest.message AS last_message,
-        latest.display_time AS last_seen,
+        latest.created_at AS last_seen,
         latest.sender AS last_sender,
         COALESCE(customer_counts.customer_message_count, 0) AS customer_message_count,
         COALESCE(unread_counts.unread_message_count, 0) AS unread_message_count,
@@ -226,23 +153,15 @@ router.get("/users", (req, res) => {
         customer_latest.last_customer_message_at
       FROM users u
       LEFT JOIN (
-        SELECT
-          m1.user_id,
-          m1.message,
-          COALESCE(m1.whatsapp_timestamp, m1.created_at) AS message_time,
-          m1.created_at AS display_time,
-          m1.sender
+        SELECT m1.user_id, m1.message, m1.created_at, m1.sender
         FROM messages m1
-        LEFT JOIN messages m2
-          ON m2.user_id = m1.user_id
-         AND (
-           COALESCE(m2.whatsapp_timestamp, m2.created_at) > COALESCE(m1.whatsapp_timestamp, m1.created_at)
-           OR (
-             COALESCE(m2.whatsapp_timestamp, m2.created_at) = COALESCE(m1.whatsapp_timestamp, m1.created_at)
-             AND m2.id > m1.id
-           )
-         )
-        WHERE m2.id IS NULL
+        INNER JOIN (
+          SELECT user_id, MAX(created_at) AS max_created_at
+          FROM messages
+          GROUP BY user_id
+        ) recent
+          ON recent.user_id = m1.user_id
+         AND recent.max_created_at = m1.created_at
       ) latest
         ON latest.user_id = u.id
       LEFT JOIN (
@@ -263,23 +182,19 @@ router.get("/users", (req, res) => {
         SELECT
           m.user_id,
           m.id AS last_customer_message_id,
-          COALESCE(m.whatsapp_timestamp, m.created_at) AS last_customer_message_at
+          m.created_at AS last_customer_message_at
         FROM messages m
-        LEFT JOIN messages m_next
-          ON m_next.user_id = m.user_id
-         AND m_next.sender = 'customer'
-         AND (
-           COALESCE(m_next.whatsapp_timestamp, m_next.created_at) > COALESCE(m.whatsapp_timestamp, m.created_at)
-           OR (
-             COALESCE(m_next.whatsapp_timestamp, m_next.created_at) = COALESCE(m.whatsapp_timestamp, m.created_at)
-             AND m_next.id > m.id
-           )
-         )
-        WHERE m.sender = 'customer'
-          AND m_next.id IS NULL
+        INNER JOIN (
+          SELECT user_id, MAX(id) AS last_customer_message_id
+          FROM messages
+          WHERE sender = 'customer'
+          GROUP BY user_id
+        ) customer_max
+          ON customer_max.user_id = m.user_id
+         AND customer_max.last_customer_message_id = m.id
       ) customer_latest
         ON customer_latest.user_id = u.id
-      ORDER BY latest.message_time DESC, u.id DESC
+      ORDER BY latest.created_at DESC, u.id DESC
     `,
     (err, result) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -292,15 +207,7 @@ router.get("/messages/:userId", (req, res) => {
   const userId = req.params.userId;
 
   db.query(
-    `
-      SELECT
-        *,
-        created_at AS display_created_at,
-        COALESCE(whatsapp_timestamp, created_at) AS sort_created_at
-      FROM messages
-      WHERE user_id = ?
-      ORDER BY COALESCE(whatsapp_timestamp, created_at) ASC, id ASC
-    `,
+    "SELECT * FROM messages WHERE user_id = ? ORDER BY created_at ASC, id ASC",
     [userId],
     (err, result) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -393,18 +300,20 @@ router.post("/send-message", async (req, res) => {
 
     const whatsappResponse = await sendWhatsAppTextMessage(user.phone, trimmedMessage);
 
-    const insertResult = await runQuery(
-      `
-        INSERT INTO messages (user_id, message, sender, is_read, whatsapp_message_id)
-        VALUES (?, ?, 'admin', 1, ?)
-      `,
-      [userId, trimmedMessage, whatsappResponse?.messages?.[0]?.id || null]
+    await runQuery(
+      "INSERT INTO messages (user_id, message, sender, is_read) VALUES (?, ?, 'admin', 1)",
+      [userId, trimmedMessage]
     );
 
-    const newMsg = await findMessageById(insertResult.insertId);
+    const newMsg = {
+      user_id: userId,
+      message: trimmedMessage,
+      sender: "admin",
+      whatsappMessageId: whatsappResponse?.messages?.[0]?.id || null,
+    };
 
-    if (req.io && newMsg) {
-      req.io.emit("newMessage", buildSocketMessage(newMsg));
+    if (req.io) {
+      req.io.emit("newMessage", newMsg);
     }
 
     return res.json({ success: true, whatsapp: whatsappResponse });
@@ -464,18 +373,17 @@ router.post("/send-template-message", async (req, res) => {
         ? `Template: ${chosenTemplateName} (${normalizedParams.join(" | ")})`
         : `Template: ${chosenTemplateName}`;
 
-    const insertResult = await runQuery(
-      `
-        INSERT INTO messages (user_id, message, sender, is_read, whatsapp_message_id)
-        VALUES (?, ?, 'admin', 1, ?)
-      `,
-      [userId, readableText, whatsappResponse?.messages?.[0]?.id || null]
+    await runQuery(
+      "INSERT INTO messages (user_id, message, sender, is_read) VALUES (?, ?, 'admin', 1)",
+      [userId, readableText]
     );
 
-    const newMsg = await findMessageById(insertResult.insertId);
-
-    if (req.io && newMsg) {
-      req.io.emit("newMessage", buildSocketMessage(newMsg));
+    if (req.io) {
+      req.io.emit("newMessage", {
+        user_id: userId,
+        message: readableText,
+        sender: "admin",
+      });
     }
 
     return res.json({ success: true, whatsapp: whatsappResponse });

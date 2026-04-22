@@ -4,17 +4,17 @@ const db = require("../db");
 
 // 🔐 LOGIN API
 router.post("/login", (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
   // ✅ Validate input
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password required" });
+  if (!username || !password) {
+    return res.status(400).json({ message: "Username and password required" });
   }
 
 
-  const sql = "SELECT * FROM auth_users WHERE email = ?";
+  const sql = "SELECT * FROM auth_users WHERE username = ?";
 
-  db.query(sql, [email], (err, result) => {
+  db.query(sql, [username], (err, result) => {
     if (err) return res.status(500).send(err);
 
     if (result.length === 0) {

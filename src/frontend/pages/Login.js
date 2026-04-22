@@ -6,7 +6,7 @@ import logo from '../../asset/logo.jpeg';
 const Login = () => {
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
+const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -24,7 +24,7 @@ const handleSubmit = async (e) => {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ username, password })
     });
 
     const data = await res.json();
@@ -99,17 +99,18 @@ const handleSubmit = async (e) => {
               </div>
             )}
 
-            {/* EMAIL */}
-            <div className="fz-field">
-              <label className="fz-label">Email</label>
-              <input
-                className="fz-input"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
+            {/* UserName */}
+           <div className="fz-field">
+              <label className="fz-label">Username</label>
+
+               <input
+                    className="fz-input"
+                   type="text"
+                    placeholder="Enter username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+  />
+</div>
 
             {/* PASSWORD */}
             <div className="fz-field">

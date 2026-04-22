@@ -157,52 +157,6 @@ function getFreeWindowLabel(remainingMs) {
   };
 }
 
-function sortMessagesByCreatedAt(messageList) {
-  return [...(Array.isArray(messageList) ? messageList : [])].sort((left, right) => {
-    const leftTime = toSafeDate(left?.sortAt || left?.createdAt).getTime();
-    const rightTime = toSafeDate(right?.sortAt || right?.createdAt).getTime();
-
-    if (leftTime === rightTime) {
-      return 0;
-    }
-
-    return leftTime - rightTime;
-  });
-}
-
-function getMessageIdentity(message, index = 0) {
-  if (message?.id != null) {
-    return `id:${message.id}`;
-  }
-
-  if (message?.whatsappMessageId) {
-    return `wa:${message.whatsappMessageId}`;
-  }
-
-  if (message?.clientId) {
-    return `client:${message.clientId}`;
-  }
-
-  return `fallback:${message?.type || ""}:${message?.text || ""}:${message?.createdAt || ""}:${index}`;
-}
-
-function mergeMessageList(messageList) {
-  const deduped = [];
-  const seen = new Set();
-
-  for (const message of sortMessagesByCreatedAt(messageList)) {
-    const identity = getMessageIdentity(message, deduped.length);
-    if (seen.has(identity)) {
-      continue;
-    }
-
-    seen.add(identity);
-    deduped.push(message);
-  }
-
-  return deduped;
-}
-
 function formatTicketTime(value) {
   if (!value) return "Just now";
   const parsed = new Date(value);
@@ -230,26 +184,6 @@ async function readErrorMessageFromResponse(response, fallbackMessage) {
     fallbackMessage;
 
   return String(message || fallbackMessage).trim();
-}
-
-function mergeTicketsWithLocalState(nextTickets, previousTickets, activeTicketId) {
-  const previousById = new Map(
-    (Array.isArray(previousTickets) ? previousTickets : []).map((ticket) => [ticketKey(ticket.id), ticket])
-  );
-
-  return (Array.isArray(nextTickets) ? nextTickets : []).map((ticket) => {
-    const previousTicket = previousById.get(ticketKey(ticket.id));
-    const isActiveTicket = idsMatch(ticket.id, activeTicketId);
-    const mergedUnread = isActiveTicket
-      ? 0
-      : Math.max(parseCount(ticket.unread), parseCount(previousTicket?.unread));
-
-    return {
-      ...previousTicket,
-      ...ticket,
-      unread: mergedUnread,
-    };
-  });
 }
 
 // ─── Icons (inline SVG helpers) ─────────────────────────────────────
@@ -560,7 +494,7 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
     }
 
     setIsSubmitting(true);
-
+     setInput("");
     try {
       await onSendMessage(trimmed, {
         isTemplate: isTemplateMode,
@@ -605,20 +539,6 @@ function ChatPanel({ activeTicket, ticket, messages, onSendMessage, onDeleteChat
     Boolean(input.trim()) &&
     Boolean(String(templateName || "").trim()) &&
     !isSubmitting;
-
-  if (activeTicket == null) {
-    return (
-      <div className="chat-panel chat-panel-empty">
-        <div className="chat-empty-state">
-          <div className="chat-empty-state-badge">Inbox Ready</div>
-          <h2 className="chat-empty-state-title">Select a ticket to open the conversation</h2>
-          <p className="chat-empty-state-text">
-            New chats and unread counters will keep updating here. Nothing is selected until you choose a customer from the list.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="chat-panel">
@@ -914,11 +834,6 @@ export default function HomeDashboard() {
   pendingOutgoingByTicketRef.current = pendingOutgoingByTicket;
   ticketsRef.current = tickets;
 
-  const handleSelectTicket = (ticketId) => {
-    if (ticketId == null) return;
-    setActiveTicket(ticketId);
-  };
-
   // ================== LOAD USERS ==================
   const loadUsers = () => {
     return fetchWithTimeout(`${API_BASE_URL}/users`)
@@ -949,10 +864,9 @@ export default function HomeDashboard() {
             }))
           : [];
 
-        setTickets((prev) =>
-          mergeTicketsWithLocalState(mapped, prev, activeTicketRef.current)
-        );
+        setTickets(mapped);
 
+        // Set active ticket
         setActiveTicket((current) => {
           if (current != null && mapped.some((t) => idsMatch(t.id, current))) {
             return current;
@@ -998,12 +912,9 @@ export default function HomeDashboard() {
       .then((data) => {
         const mapped = Array.isArray(data)
           ? data.map((msg) => ({
-              id: msg.id ?? null,
               type: msg.sender === "admin" ? "outgoing" : "incoming",
               text: msg.message ?? "",
-              createdAt: msg.display_created_at ?? msg.created_at ?? "",
-              sortAt: msg.sort_created_at ?? msg.whatsapp_timestamp ?? msg.display_created_at ?? msg.created_at ?? "",
-              whatsappMessageId: msg.whatsapp_message_id ?? msg.whatsappMessageId ?? null,
+              createdAt: msg.created_at ?? "",
             }))
           : [];
 
@@ -1022,7 +933,7 @@ export default function HomeDashboard() {
           clientId: pending.clientId,
         }));
 
-        setMessages(mergeMessageList([...mapped, ...optimisticMessages]));
+        setMessages([...mapped, ...optimisticMessages]);
       })
       .catch((err) => console.error("Fetch messages failed:", err));
   };
@@ -1033,12 +944,7 @@ export default function HomeDashboard() {
   }, []);
 
   useEffect(() => {
-    if (activeTicket == null) {
-      setMessages([]);
-      return;
-    }
-
-    loadMessages(activeTicket);
+    loadMessages();
   }, [activeTicket]);
 
   useEffect(() => {
@@ -1063,7 +969,7 @@ export default function HomeDashboard() {
       const sender = payload?.sender;
       const rawUserId = extractUserIdFromSocketPayload(payload);
 
-      if (rawUserId == null) {
+      if (sender !== "customer" || rawUserId == null) {
         return;
       }
 
@@ -1072,56 +978,39 @@ export default function HomeDashboard() {
       const messageText = String(payload?.message ?? "").trim();
       const createdAt = payload?.created_at || nowIso;
       const isActive = idsMatch(incomingTicketId, activeTicketRef.current);
-      const normalizedMessage = {
-        id: payload?.id ?? null,
-        type: sender === "admin" ? "outgoing" : "incoming",
-        text: messageText,
-        createdAt,
-        sortAt: payload?.sort_created_at ?? createdAt,
-        whatsappMessageId: payload?.whatsapp_message_id ?? payload?.whatsappMessageId ?? null,
-      };
 
       setTickets((prev) =>
-        mergeTicketsWithLocalState(
-          prev.map((ticket) =>
+        prev.map((ticket) =>
           idsMatch(ticket.id, incomingTicketId)
             ? {
                 ...ticket,
                 preview: messageText || ticket.preview,
                 time: createdAt,
-                lastCustomerMessageAt:
-                  sender === "customer" ? createdAt : ticket.lastCustomerMessageAt,
-                customerMessageCount:
-                  sender === "customer"
-                    ? parseCount(ticket.customerMessageCount) + 1
-                    : parseCount(ticket.customerMessageCount),
-                lastCustomerMessageId:
-                  sender === "customer"
-                    ? payload?.id ?? payload?.message_id ?? ticket.lastCustomerMessageId
-                    : ticket.lastCustomerMessageId,
-                unread:
-                  sender === "customer"
-                    ? (isActive ? 0 : (ticket.unread || 0) + 1)
-                    : ticket.unread || 0,
+                lastCustomerMessageAt: createdAt,
+                customerMessageCount: parseCount(ticket.customerMessageCount) + 1,
+                lastCustomerMessageId: payload?.id ?? payload?.message_id ?? ticket.lastCustomerMessageId,
+                unread: isActive ? 0 : (ticket.unread || 0) + 1,
               }
             : ticket
-          ),
-          prev,
-          activeTicketRef.current
         )
       );
 
-      if (isActive && sender === "customer") {
+      if (isActive) {
         markMessagesAsRead(incomingTicketId);
       }
 
       if (isActive) {
-        setMessages((prev) => mergeMessageList([...prev, normalizedMessage]));
+        setMessages((prev) => [
+          ...prev,
+          {
+            type: "incoming",
+            text: messageText,
+            createdAt,
+          },
+        ]);
       }
 
-      window.setTimeout(() => {
-        loadUsers();
-      }, 120);
+      loadUsers();
       if (isActive) {
         loadMessages(incomingTicketId);
       }
@@ -1187,19 +1076,16 @@ export default function HomeDashboard() {
     }));
 
     if (idsMatch(targetTicket, activeTicketRef.current)) {
-      setMessages((prev) =>
-        mergeMessageList([
-          ...prev,
-          {
+      setMessages((prev) => [
+        ...prev,
+        {
           type: "outgoing",
           text: trimmed,
           createdAt,
-          sortAt: createdAt,
           pending: true,
           clientId,
-          },
-        ])
-      );
+        },
+      ]);
     }
 
     setTickets((prev) =>
@@ -1313,9 +1199,10 @@ export default function HomeDashboard() {
       const remainingTickets = ticketsRef.current.filter(
         (ticket) => !idsMatch(ticket.id, targetTicket)
       );
+      const nextActiveTicket = remainingTickets.length > 0 ? remainingTickets[0].id : null;
 
       setTickets(remainingTickets);
-      setActiveTicket(null);
+      setActiveTicket(nextActiveTicket);
       setMessages([]);
 
       setPendingOutgoingByTicket((prev) => {
@@ -1349,7 +1236,7 @@ export default function HomeDashboard() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         activeTicket={activeTicket}
-        setActiveTicket={handleSelectTicket}
+        setActiveTicket={setActiveTicket}
         tickets={tickets}
         totalUnread={totalUnread}
       />
@@ -1365,5 +1252,3 @@ export default function HomeDashboard() {
     </div>
   );
 }
-
-

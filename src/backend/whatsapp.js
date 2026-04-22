@@ -4,22 +4,6 @@ function normalizePhoneNumber(phone) {
   return String(phone || "").replace(/[^\d]/g, "");
 }
 
-/**
- * ✅ FIXED: Returns BIGINT timestamp (not Date)
- */
-function parseWhatsAppTimestamp(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-
-  const numeric = Number(raw);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return null;
-  }
-
-  // If already in milliseconds keep it, else convert seconds → ms
-  return numeric >= 1e12 ? numeric : numeric * 1000;
-}
-
 function hasWhatsAppConfig() {
   return Boolean(config.whatsapp.accessToken && config.whatsapp.phoneNumberId);
 }
@@ -198,8 +182,7 @@ function extractInboundMessages(payload) {
             "",
           type: message?.type || "unknown",
           whatsappMessageId: message?.id || "",
-          whatsappTimestamp: parseWhatsAppTimestamp(message?.timestamp),
-
+          timestamp: message?.timestamp || "",
           referral: message?.referral || null,
         });
       }
@@ -213,7 +196,6 @@ module.exports = {
   extractInboundMessages,
   hasWhatsAppConfig,
   normalizePhoneNumber,
-  parseWhatsAppTimestamp,
   sendWhatsAppTemplateMessage,
   sendWhatsAppTextMessage,
 };
