@@ -157,6 +157,52 @@ function getFreeWindowLabel(remainingMs) {
   };
 }
 
+function sortMessagesByCreatedAt(messageList) {
+  return [...(Array.isArray(messageList) ? messageList : [])].sort((left, right) => {
+    const leftTime = toSafeDate(left?.sortAt || left?.createdAt).getTime();
+    const rightTime = toSafeDate(right?.sortAt || right?.createdAt).getTime();
+
+    if (leftTime === rightTime) {
+      return 0;
+    }
+
+    return leftTime - rightTime;
+  });
+}
+
+function getMessageIdentity(message, index = 0) {
+  if (message?.id != null) {
+    return `id:${message.id}`;
+  }
+
+  if (message?.whatsappMessageId) {
+    return `wa:${message.whatsappMessageId}`;
+  }
+
+  if (message?.clientId) {
+    return `client:${message.clientId}`;
+  }
+
+  return `fallback:${message?.type || ""}:${message?.text || ""}:${message?.createdAt || ""}:${index}`;
+}
+
+function mergeMessageList(messageList) {
+  const deduped = [];
+  const seen = new Set();
+
+  for (const message of sortMessagesByCreatedAt(messageList)) {
+    const identity = getMessageIdentity(message, deduped.length);
+    if (seen.has(identity)) {
+      continue;
+    }
+
+    seen.add(identity);
+    deduped.push(message);
+  }
+
+  return deduped;
+}
+
 function formatTicketTime(value) {
   if (!value) return "Just now";
   const parsed = new Date(value);
@@ -952,9 +998,12 @@ export default function HomeDashboard() {
       .then((data) => {
         const mapped = Array.isArray(data)
           ? data.map((msg) => ({
+              id: msg.id ?? null,
               type: msg.sender === "admin" ? "outgoing" : "incoming",
               text: msg.message ?? "",
-              createdAt: msg.created_at ?? "",
+              createdAt: msg.display_created_at ?? msg.created_at ?? "",
+              sortAt: msg.sort_created_at ?? msg.whatsapp_timestamp ?? msg.display_created_at ?? msg.created_at ?? "",
+              whatsappMessageId: msg.whatsapp_message_id ?? msg.whatsappMessageId ?? null,
             }))
           : [];
 
@@ -973,7 +1022,7 @@ export default function HomeDashboard() {
           clientId: pending.clientId,
         }));
 
-        setMessages([...mapped, ...optimisticMessages]);
+        setMessages(mergeMessageList([...mapped, ...optimisticMessages]));
       })
       .catch((err) => console.error("Fetch messages failed:", err));
   };
@@ -1014,7 +1063,7 @@ export default function HomeDashboard() {
       const sender = payload?.sender;
       const rawUserId = extractUserIdFromSocketPayload(payload);
 
-      if (sender !== "customer" || rawUserId == null) {
+      if (rawUserId == null) {
         return;
       }
 
@@ -1023,6 +1072,14 @@ export default function HomeDashboard() {
       const messageText = String(payload?.message ?? "").trim();
       const createdAt = payload?.created_at || nowIso;
       const isActive = idsMatch(incomingTicketId, activeTicketRef.current);
+      const normalizedMessage = {
+        id: payload?.id ?? null,
+        type: sender === "admin" ? "outgoing" : "incoming",
+        text: messageText,
+        createdAt,
+        sortAt: payload?.sort_created_at ?? createdAt,
+        whatsappMessageId: payload?.whatsapp_message_id ?? payload?.whatsappMessageId ?? null,
+      };
 
       setTickets((prev) =>
         mergeTicketsWithLocalState(
@@ -1032,10 +1089,20 @@ export default function HomeDashboard() {
                 ...ticket,
                 preview: messageText || ticket.preview,
                 time: createdAt,
-                lastCustomerMessageAt: createdAt,
-                customerMessageCount: parseCount(ticket.customerMessageCount) + 1,
-                lastCustomerMessageId: payload?.id ?? payload?.message_id ?? ticket.lastCustomerMessageId,
-                unread: isActive ? 0 : (ticket.unread || 0) + 1,
+                lastCustomerMessageAt:
+                  sender === "customer" ? createdAt : ticket.lastCustomerMessageAt,
+                customerMessageCount:
+                  sender === "customer"
+                    ? parseCount(ticket.customerMessageCount) + 1
+                    : parseCount(ticket.customerMessageCount),
+                lastCustomerMessageId:
+                  sender === "customer"
+                    ? payload?.id ?? payload?.message_id ?? ticket.lastCustomerMessageId
+                    : ticket.lastCustomerMessageId,
+                unread:
+                  sender === "customer"
+                    ? (isActive ? 0 : (ticket.unread || 0) + 1)
+                    : ticket.unread || 0,
               }
             : ticket
           ),
@@ -1044,19 +1111,12 @@ export default function HomeDashboard() {
         )
       );
 
-      if (isActive) {
+      if (isActive && sender === "customer") {
         markMessagesAsRead(incomingTicketId);
       }
 
       if (isActive) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            type: "incoming",
-            text: messageText,
-            createdAt,
-          },
-        ]);
+        setMessages((prev) => mergeMessageList([...prev, normalizedMessage]));
       }
 
       window.setTimeout(() => {
@@ -1127,16 +1187,19 @@ export default function HomeDashboard() {
     }));
 
     if (idsMatch(targetTicket, activeTicketRef.current)) {
-      setMessages((prev) => [
-        ...prev,
-        {
+      setMessages((prev) =>
+        mergeMessageList([
+          ...prev,
+          {
           type: "outgoing",
           text: trimmed,
           createdAt,
+          sortAt: createdAt,
           pending: true,
           clientId,
-        },
-      ]);
+          },
+        ])
+      );
     }
 
     setTickets((prev) =>
