@@ -11,7 +11,6 @@ router.post("/login", (req, res) => {
     return res.status(400).json({ message: "Username and password required" });
   }
 
-
   const sql = "SELECT * FROM auth_users WHERE username = ?";
 
   db.query(sql, [username], (err, result) => {
